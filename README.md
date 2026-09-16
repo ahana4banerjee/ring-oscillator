@@ -60,6 +60,8 @@ Back to Python Optimizer
 
 ## Current Status
 
-- **Current Phase:** **Phase 0 (Repository & Specification Setup)**
-- **Completed:** Single Source of Truth specification ([SRS.md](SRS.md)) drafted; architectural interfaces and data contracts established.
-- **Next Immediate Step:** Locate/add the baseline 5-stage ring oscillator circuit file to `circuits/baseline/` and configure Python project dependencies.
+- **Current Phase:** **Phase 1 (Baseline LTspice Circuit Validation)**
+- **Completed:** 
+  - Single Source of Truth specification ([SRS.md](SRS.md)) established.
+  - **Phase 0 completed**: Modular project directory scaffolding, `.gitignore`, initial configuration, and isolated Python virtual environment (`venv`) with core scientific and testing libraries.
+- **Next Immediate Step:** Place the baseline 5-stage ring oscillator schematic or netlist (`.asc` or `.cir`) into `circuits/baseline/` and validate standalone simulation in LTspice.
