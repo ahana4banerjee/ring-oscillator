@@ -1,0 +1,17 @@
+# Phase 0 & Phase 1 Core Dependencies
+# Numerical computing & scientific parsing
+numpy>=1.24.0
+scipy>=1.10.0
+
+# Configuration & Data manipulation
+pyyaml>=6.0
+pandas>=2.0.0
+
+# Plotting & Visualization
+matplotlib>=3.7.0
+
+# Testing & Quality Assurance
+pytest>=7.4.0
+
+# Note: Advanced Bayesian Optimization frameworks (e.g. scikit-optimize, optuna, botorch)
+# will be introduced in subsequent phases (Phase 5/6) as specified in SRS.md.

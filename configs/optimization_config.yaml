@@ -1,0 +1,40 @@
+# Optimization Pipeline Configuration
+
+circuit:
+  baseline_netlist: "circuits/baseline/ring_oscillator.asc"
+  template_netlist: "circuits/templates/ring_oscillator.net"
+  models_path: "circuits/models/"
+  stages: 5
+  vdd: 1.8                     # Supply Voltage (V) - TBD based on tech node
+  nominal_wn: 0.5e-6           # Baseline NMOS width (m) - TBD
+  nominal_wp: 1.0e-6           # Baseline PMOS width (m) - TBD
+  length: 0.18e-6              # Channel length (m) - TBD
+
+simulation:
+  ltspice_executable: "C:\\Users\\Ahana Banerjee\\AppData\\Local\\Programs\\ADI\\LTspice\\LTspice.exe"  # Configurable
+  transient_stop: "100n"
+  transient_start_save: "20n"
+  max_step: "10p"
+  timeout_seconds: 30
+
+search_space:
+  wn_min: 0.18e-6
+  wn_max: 2.0e-6
+  wp_min: 0.36e-6
+  wp_max: 4.0e-6
+  step_size: 10e-9             # Grid snapping (10nm)
+
+optimization:
+  method: "bayesian"           # "bayesian" or "random"
+  seed: 42
+  max_iterations: 50
+  n_initial_samples: 10
+  objective_mode: "weighted"   # "weighted" or "pdp"
+  weights:
+    frequency: 0.5
+    power: 0.5
+
+logging:
+  results_csv: "results/processed/experiment_log.csv"
+  summary_json: "results/processed/run_summary.json"
+  plots_dir: "results/plots/"
