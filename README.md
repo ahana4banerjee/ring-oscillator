@@ -60,8 +60,9 @@ Back to Python Optimizer
 
 ## Current Status
 
-- **Current Phase:** **Phase 2 (Python ↔ LTspice Automation)**
+- **Current Phase:** **Phase 3 (Measurement Extraction Engine)**
 - **Completed:** 
   - **Phase 0 completed**: Project structure, `.gitignore`, initial config, and isolated `venv`.
-  - **Phase 1 completed**: Baseline 5-stage ring oscillator schematic ([ltspice.asc](circuits/baseline/ltspice.asc)) placed in `circuits/baseline/`, headless LTspice batch execution confirmed, and netlist ([ltspice.net](circuits/baseline/ltspice.net)), log ([ltspice.log](circuits/baseline/ltspice.log)), and raw transient data ([ltspice.raw](circuits/baseline/ltspice.raw)) validated.
-- **Next Immediate Step:** Implement `src/ltspice/parameterizer.py` and `src/simulation/runner.py` to automate parametric netlist injection and batch execution from Python.
+  - **Phase 1 completed**: Baseline 5-stage ring oscillator schematic ([ltspice.asc](circuits/baseline/ltspice.asc)) validated.
+  - **Phase 2 completed**: Python ↔ LTspice automation pipeline implemented (`src/ltspice/parameterizer.py`, `src/simulation/runner.py`) with parametric netlist generation, headless execution, timeout watchdog, and verified end-to-end tests (`tests/test_runner.py`).
+- **Next Immediate Step:** Implement `src/ltspice/parser.py` and `src/evaluation/extractor.py` to parse SPICE `.log` measurement statements and calculate electrical metrics.

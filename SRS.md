@@ -496,8 +496,8 @@ ring-oscillator/
 
 The project implementation will be declared complete when:
 1. [x] Baseline 5-stage ring oscillator netlist is confirmed functional in LTspice.
-2. [] $W_n$ and $W_p$ are dynamically parameterizable via Python without manual netlist edits.
-3. [] Python automates batch LTspice execution with robust timeout and process watchdog handling.
+2. [x] $W_n$ and $W_p$ are dynamically parameterizable via Python without manual netlist edits.
+3. [x] Python automates batch LTspice execution with robust timeout and process watchdog handling.
 4. [] Oscillation frequency, power consumption, and propagation delay are parsed reliably.
 5. [] Objective evaluation handles both valid outputs and failed/non-oscillating circuits.
 6. [] Random Search executes over the defined search space under the unified evaluation contract.
