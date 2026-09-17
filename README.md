@@ -60,9 +60,10 @@ Back to Python Optimizer
 
 ## Current Status
 
-- **Current Phase:** **Phase 3 (Measurement Extraction Engine)**
+- **Current Phase:** **Phase 4 (Objective Function & Penalty Engine)**
 - **Completed:** 
   - **Phase 0 completed**: Project structure, `.gitignore`, initial config, and isolated `venv`.
   - **Phase 1 completed**: Baseline 5-stage ring oscillator schematic ([ltspice.asc](circuits/baseline/ltspice.asc)) validated.
-  - **Phase 2 completed**: Python ↔ LTspice automation pipeline implemented (`src/ltspice/parameterizer.py`, `src/simulation/runner.py`) with parametric netlist generation, headless execution, timeout watchdog, and verified end-to-end tests (`tests/test_runner.py`).
-- **Next Immediate Step:** Implement `src/ltspice/parser.py` and `src/evaluation/extractor.py` to parse SPICE `.log` measurement statements and calculate electrical metrics.
+  - **Phase 2 completed**: Python ↔ LTspice automation pipeline (`src/ltspice/parameterizer.py`, `src/simulation/runner.py`).
+  - **Phase 3 completed**: Measurement extraction engine (`src/ltspice/parser.py`, `src/evaluation/extractor.py`) implemented and verified; reliably extracts $f_{osc}$, $P_{avg}$, stage delay ($t_{pd}$), period ($T$), and Power-Delay Product (PDP) into a validated dictionary.
+- **Next Immediate Step:** Implement `src/evaluation/objective.py` to formulate multi-objective scoring and non-oscillation penalty policies.
