@@ -495,7 +495,7 @@ ring-oscillator/
 ## 18. Definition of Done (DoD)
 
 The project implementation will be declared complete when:
-1. [] Baseline 5-stage ring oscillator netlist is confirmed functional in LTspice.
+1. [x] Baseline 5-stage ring oscillator netlist is confirmed functional in LTspice.
 2. [] $W_n$ and $W_p$ are dynamically parameterizable via Python without manual netlist edits.
 3. [] Python automates batch LTspice execution with robust timeout and process watchdog handling.
 4. [] Oscillation frequency, power consumption, and propagation delay are parsed reliably.

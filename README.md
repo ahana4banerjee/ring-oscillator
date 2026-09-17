@@ -60,8 +60,8 @@ Back to Python Optimizer
 
 ## Current Status
 
-- **Current Phase:** **Phase 1 (Baseline LTspice Circuit Validation)**
+- **Current Phase:** **Phase 2 (Python ↔ LTspice Automation)**
 - **Completed:** 
-  - Single Source of Truth specification ([SRS.md](SRS.md)) established.
-  - **Phase 0 completed**: Modular project directory scaffolding, `.gitignore`, initial configuration, and isolated Python virtual environment (`venv`) with core scientific and testing libraries.
-- **Next Immediate Step:** Place the baseline 5-stage ring oscillator schematic or netlist (`.asc` or `.cir`) into `circuits/baseline/` and validate standalone simulation in LTspice.
+  - **Phase 0 completed**: Project structure, `.gitignore`, initial config, and isolated `venv`.
+  - **Phase 1 completed**: Baseline 5-stage ring oscillator schematic ([ltspice.asc](circuits/baseline/ltspice.asc)) placed in `circuits/baseline/`, headless LTspice batch execution confirmed, and netlist ([ltspice.net](circuits/baseline/ltspice.net)), log ([ltspice.log](circuits/baseline/ltspice.log)), and raw transient data ([ltspice.raw](circuits/baseline/ltspice.raw)) validated.
+- **Next Immediate Step:** Implement `src/ltspice/parameterizer.py` and `src/simulation/runner.py` to automate parametric netlist injection and batch execution from Python.
