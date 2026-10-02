@@ -267,23 +267,42 @@ The optimization problem seeks to explore the fundamental trade-offs between spe
    - $PDP = P_{avg} \times t_{pd}$ [Joules]: Power-Delay Product per switching event.
    - Energy per cycle $E_{cycle} = \frac{P_{avg}}{f_{osc}}$ [Joules].
 
-### 11.2 Scalar Objective Formulations (Configurable)
+### 11.2 Decided Development Objective Function
 
-The engine shall support configurable optimization modes defined in `configs/optimization_config.yaml`:
+The decided development objective function is a weighted multi-objective utility formulation normalized against the Phase 1–3 reference baseline:
 
-- **Mode 1: Maximum Frequency subject to Power Constraint**
-  $$\max W(W_n, W_p) = f_{osc} \quad \text{s.t.} \quad P_{avg} \le P_{max}$$
+$$\mathcal{F}(W_n, W_p) = w_f \cdot \left(\frac{f_{osc}}{f_0}\right) - w_p \cdot \left(\frac{P_{avg}}{P_0}\right)$$
 
-- **Mode 2: Minimum Power-Delay Product (PDP)**
-  $$\min \text{PDP} = P_{avg} \cdot t_{pd}$$
+Where:
+- $f_{osc}$ = candidate oscillation frequency (Hz)
+- $P_{avg}$ = candidate average power consumption (W)
+- $f_0 = 28,491,793,124.8\text{ Hz}$ ($28.492\text{ GHz}$), validated baseline frequency at $1.8\text{V}$ temporary development $V_{DD}$
+- $P_0 = 0.141160332486\text{ W}$ ($141.16\text{ mW}$), validated baseline power at $1.8\text{V}$ temporary development $V_{DD}$
+- $w_f, w_p \ge 0$ are user-specified importance weights satisfying $w_f + w_p = 1.0$
 
-- **Mode 3: Weighted Multi-Objective Utility Function**
-  $$\max \mathcal{F}(W_n, W_p) = w_f \cdot \left(\frac{f_{osc}}{f_{norm}}\right) - w_p \cdot \left(\frac{P_{avg}}{P_{norm}}\right)$$
-  Where:
-  - $w_f, w_p \ge 0$ are user-specified importance weights ($w_f + w_p = 1.0$).
-  - $f_{norm}, P_{norm}$ are normalization scalars derived from the nominal baseline design.
+#### Decided Weight Configurations:
+1. **Config B (Balanced):** $w_f = 0.5, w_p = 0.5$
+2. **Config S (Speed-biased):** $w_f = 0.7, w_p = 0.3$
 
-*(Exact choice of primary objective mode and weights: **TBD / Open Decision**; the implementation shall support all modes via configuration).*
+#### Baseline Normalization Consistency:
+Evaluating the baseline candidate ($f_{osc}=f_0, P_{avg}=P_0$) relative to itself under balanced weights ($w_f=0.5, w_p=0.5$) satisfies:
+$$\mathcal{F}_{baseline} = 0.5(1.0) - 0.5(1.0) = 0.0$$
+
+#### Penalty Policy for Failed Candidates:
+Candidates that fail to simulate, do not oscillate, or encounter SPICE convergence failures are assigned a scalar penalty score of $\mathcal{F}_{penalty} = -1.0 \times 10^9$. Valid candidates are evaluated using the utility formula without penalty.
+
+### 11.3 Oscillation Validity Rule
+
+A candidate configuration $[W_n, W_p]$ is classified as a **VALID** oscillating candidate if and only if all of the following deterministic conditions are satisfied:
+1. **Simulation Health:** SPICE transient simulation process completes cleanly (return code 0) without fatal errors or singular matrix divergence.
+2. **Measurable Waveform:** The output node waveform $V(\text{OSC})$ produces at least 4 threshold crossings ($0.5 \times V_{DD}$) to allow steady-state period extraction (`tperiod`).
+3. **Finite Positive Period:** Extracted oscillation period $T_{period} > 0$ and is a finite number (not `None`, `NaN`, or `Inf`).
+4. **Finite Positive Frequency:** Derived oscillation frequency $f_{osc} = \frac{1}{T_{period}} > 0$ and is a finite number.
+5. **Internal Consistency:** Stage propagation delay $t_{pd} = \frac{T_{period}}{2 \times N_{stages}} > 0$ and power consumption $P_{avg} > 0$.
+
+Candidates failing any condition above are assigned `status = NO_OSCILLATION` and evaluated using the penalty policy without crashing the optimization process.
+
+*(Note: While the mathematical objective function and validity rule are decided, physical operating parameters such as supply voltage $V_{DD}$ remain open decisions under TBD-02).*
 
 ---
 
@@ -499,7 +518,7 @@ The project implementation will be declared complete when:
 2. [x] $W_n$ and $W_p$ are dynamically parameterizable via Python without manual netlist edits.
 3. [x] Python automates batch LTspice execution with robust timeout and process watchdog handling.
 4. [x] Oscillation frequency, power consumption, and propagation delay are parsed reliably.
-5. [] Objective evaluation handles both valid outputs and failed/non-oscillating circuits.
+5. [x] Objective evaluation handles both valid outputs and failed/non-oscillating circuits.
 6. [] Random Search executes over the defined search space under the unified evaluation contract.
 7. [] Bayesian Optimization executes over the identical search space with GP surrogate updating.
 8. [] All evaluations are tracked in structured CSV and JSON log artifacts.
@@ -516,8 +535,7 @@ The following items are deliberately classified as **TBD / Open Decision** pendi
 | ID | Item Description | Status / Default Assumption | Impact Area |
 | :--- | :--- | :--- | :--- |
 | **TBD-01** | **Physical Transistor Technology Node & Models** | TBD (e.g., TSMC 180nm, BSIM4 45nm PTM, or default LTspice CMOS) | Circuit files, length $L$ |
-| **TBD-02** | **Nominal Supply Voltage ($V_{DD}$)** | TBD (1.8V for 180nm, 1.2V for 90nm/65nm, 1.0V for 45nm) | SPICE netlist & power |
+| **TBD-02** | **Nominal Supply Voltage ($V_{DD}$)** | TBD (1.8V used as temporary development value; final VDD unresolved) | SPICE netlist & power |
 | **TBD-03** | **Search Space Bounds ($W_{n,min..max}$, $W_{p,min..max}$)** | TBD (e.g., $W_n \in [0.18\mu\text{m}, 2.0\mu\text{m}]$, $W_p \in [0.36\mu\text{m}, 4.0\mu\text{m}]$) | Optimizer configuration |
 | **TBD-04** | **Specific Bayesian Optimization Library** | TBD (`scikit-optimize`, `Optuna`, or `BoTorch`/`GPyOpt`) | `src/optimization/bayesian.py` |
-| **TBD-05** | **Exact Objective Function Formulation & Weights** | TBD (Default: Weighted multi-objective $\mathcal{F} = w_f \frac{f}{f_0} - w_p \frac{P}{P_0}$) | `src/evaluation/objective.py` |
 | **TBD-06** | **LTspice Installation Path on Target OS** | TBD (Configurable via `configs/optimization_config.yaml`) | Subprocess runner |

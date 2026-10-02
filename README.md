@@ -36,10 +36,18 @@ Back to Python Optimizer
 1. **Target Circuit:** A 5-stage CMOS ring oscillator parameterized by NMOS width ($W_n$) and PMOS width ($W_p$).
 2. **Simulation Layer:** Automated headless LTspice batch simulation (`-b`) with watchdog timeout and crash protection.
 3. **Metric Extraction:** Parsing SPICE `.meas` statements from simulation logs to extract oscillation frequency ($f_{osc}$), average power dissipation ($P_{avg}$), and propagation delay ($t_{pd}$).
-4. **Optimization Strategies:**
+4. **Decided Objective Function:**
+   - Evaluates multi-metric trade-offs via normalized weighted utility:
+     $$\mathcal{F} = w_f \cdot \left(\frac{f_{osc}}{f_0}\right) - w_p \cdot \left(\frac{P_{avg}}{P_0}\right)$$
+   - **Baseline Normalization ($f_0, P_0$):** Derived from the validated Phase 1–3 reference baseline ($f_0 = 28.492\text{ GHz}, P_0 = 141.16\text{ mW}$). Yields $\mathcal{F} = 0.0$ for baseline under balanced weights.
+   - **Supported Configurations:**
+     - **Config B (Balanced):** $w_f = 0.5, w_p = 0.5$
+     - **Config S (Speed-biased):** $w_f = 0.7, w_p = 0.3$
+5. **Supply Voltage Note:** $V_{DD} = 1.8\text{ V}$ is currently used as a **temporary development/simulation value**; final physical $V_{DD}$ remains TBD.
+6. **Optimization Strategies:**
    - **Bayesian Optimization:** Sample-efficient search using a Gaussian Process surrogate model and acquisition function (e.g., Expected Improvement).
    - **Random Search:** Unbiased baseline running across identical parameter bounds and evaluation pipelines.
-5. **Experiment Tracking:** Logging of all evaluated candidates, status, electrical metrics, and objective scores into structured CSV and JSON summaries.
+7. **Experiment Tracking:** Logging of all evaluated candidates, status, electrical metrics, and objective scores into structured CSV and JSON summaries.
 
 ---
 
@@ -60,10 +68,11 @@ Back to Python Optimizer
 
 ## Current Status
 
-- **Current Phase:** **Phase 4 (Objective Function & Penalty Engine)**
+- **Current Phase:** **Phase 5 (Random Search Baseline Engine)**
 - **Completed:** 
   - **Phase 0 completed**: Project structure, `.gitignore`, initial config, and isolated `venv`.
-  - **Phase 1 completed**: Baseline 5-stage ring oscillator schematic ([ltspice.asc](circuits/baseline/ltspice.asc)) validated.
+  - **Phase 1 completed**: Baseline 5-stage ring oscillator schematic ([ring_oscillator.asc](circuits/baseline/ring_oscillator.asc)) validated.
   - **Phase 2 completed**: Python ↔ LTspice automation pipeline (`src/ltspice/parameterizer.py`, `src/simulation/runner.py`).
-  - **Phase 3 completed**: Measurement extraction engine (`src/ltspice/parser.py`, `src/evaluation/extractor.py`) implemented and verified; reliably extracts $f_{osc}$, $P_{avg}$, stage delay ($t_{pd}$), period ($T$), and Power-Delay Product (PDP) into a validated dictionary.
-- **Next Immediate Step:** Implement `src/evaluation/objective.py` to formulate multi-objective scoring and non-oscillation penalty policies.
+  - **Phase 3 completed**: Measurement extraction engine (`src/ltspice/parser.py`, `src/evaluation/extractor.py`).
+  - **Phase 4 completed**: Objective function & penalty engine (`src/evaluation/objective.py`) implemented; calculates weighted multi-objective utility $\mathcal{F} = w_f \frac{f}{f_0} - w_p \frac{P}{P_0}$ normalized against Phase 1–3 baseline constants ($f_0 = 28.492\text{ GHz}, P_0 = 141.16\text{ mW}$) under Config B ($0.5/0.5$) and Config S ($0.7/0.3$), with automated penalty assignment ($-\infty / -1.0\times 10^9$) for invalid or non-oscillating candidates.
+- **Next Immediate Step:** Implement `src/optimization/random_search.py` and `experiments/run_random_search.py` to evaluate uniform random search over the design space.
