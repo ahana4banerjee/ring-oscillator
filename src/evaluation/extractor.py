@@ -6,8 +6,17 @@ Processes raw parsed measurements from LTspice and computes derived electrical m
 - Total Average Power Consumption (P_avg in Watts / mW)
 - Stage Propagation Delay (t_pd in seconds / ps)
 - Power-Delay Product (PDP in Joules)
+
+Oscillation Validity Rule:
+A candidate circuit is classified as a VALID oscillating candidate if and only if:
+1. Simulation Health: SPICE transient simulation completed without solver fatal errors.
+2. Measurable Waveform: A valid steady-state period (tperiod) was extracted from SPICE .meas directives.
+3. Positive & Finite Period: Measured period T_period > 0 and is not NaN/Inf.
+4. Positive & Finite Frequency: Extracted frequency f_osc = 1 / T_period > 0 and is not NaN/Inf.
+5. Internal Consistency: Derived stage delay t_pd = T_period / (2 * N) > 0.
 """
 
+import math
 from pathlib import Path
 from typing import Dict, Any, Optional, Union
 from src.ltspice.parser import LTspiceLogParser
@@ -59,8 +68,27 @@ class MetricExtractor:
         elif period is None and freq is not None and freq > 0:
             period = 1.0 / freq
 
-        # Check oscillation validity
-        is_oscillating = (freq is not None and freq > 0 and period is not None and period > 0)
+        # Deterministic Oscillation Validity Rule Verification:
+        # 1. period and freq must be non-None
+        # 2. period and freq must be finite numbers (not NaN / Inf)
+        # 3. period and freq must be strictly positive (> 0)
+        is_valid_period = (
+            period is not None and
+            isinstance(period, (int, float)) and
+            not math.isnan(period) and
+            not math.isinf(period) and
+            period > 0
+        )
+
+        is_valid_freq = (
+            freq is not None and
+            isinstance(freq, (int, float)) and
+            not math.isnan(freq) and
+            not math.isinf(freq) and
+            freq > 0
+        )
+
+        is_oscillating = is_valid_period and is_valid_freq
 
         if not is_oscillating:
             return {

@@ -1,5 +1,5 @@
 """
-Unit & Integration tests for Phase 3: Measurement Extraction Engine.
+Unit & Integration tests for Oscillation Validity and Measurement Extraction Engine.
 """
 
 from pathlib import Path
@@ -8,6 +8,7 @@ from src.ltspice.parser import LTspiceLogParser
 from src.evaluation.extractor import MetricExtractor
 
 PHASE2_DEMO_DIR = Path("results/raw/phase2_demo")
+SANITY_DIR = Path("results/raw")
 
 
 def test_log_parser_success():
@@ -27,7 +28,7 @@ def test_log_parser_success():
     assert measurements["tperiod"] is not None
     assert measurements["tperiod"] > 0
     assert measurements["freq"] is not None
-    assert measurements["freq"] > 20e9  # > 20 GHz for 0.5u/1.0u candidate
+    assert measurements["freq"] > 20e9
     assert measurements["avgpower"] is not None
     assert measurements["avgpower"] > 0
 
@@ -71,7 +72,49 @@ def test_metric_extractor_non_oscillating():
     assert metrics["is_oscillating"] is False
     assert metrics["freq_hz"] is None
     assert metrics["delay_ps"] is None
-    assert metrics["power_mw"] is not None  # Power is still measured even if not oscillating
+    assert metrics["power_mw"] is not None
+
+
+def test_candidate_1_regression_behavior():
+    """Candidate 1 (Wn=0.36u, Wp=0.72u) fails 0.9V threshold crossings and must remain NO_OSCILLATION."""
+    log_path = SANITY_DIR / "sanity_candidate_1.log"
+    if not log_path.exists():
+        log_path = PHASE2_DEMO_DIR / "candidate_1.log"
+
+    extractor = MetricExtractor(num_stages=5)
+    metrics = extractor.extract_from_log(log_path)
+
+    assert metrics["status"] == "NO_OSCILLATION"
+    assert metrics["is_oscillating"] is False
+    assert metrics["freq_hz"] is None
+
+
+def test_candidate_3_regression_behavior():
+    """Candidate 3 (Wn=0.18u, Wp=0.36u) produces ~50 GHz oscillation and must remain SUCCESS / oscillating."""
+    log_path = SANITY_DIR / "sanity_candidate_3.log"
+    assert log_path.exists(), "sanity_candidate_3.log missing"
+
+    extractor = MetricExtractor(num_stages=5)
+    metrics = extractor.extract_from_log(log_path)
+
+    assert metrics["status"] == "SUCCESS"
+    assert metrics["is_oscillating"] is True
+    assert abs(metrics["freq_ghz"] - 50.0) < 0.1
+    assert abs(metrics["delay_ps"] - 2.0) < 0.1
+    assert abs(metrics["power_mw"] - 50.875) < 0.1
+
+
+def test_invalid_non_positive_period_rejection(tmp_path):
+    """Verify non-positive or NaN periods are rejected safely without crashing."""
+    mock_log = tmp_path / "mock_fail.log"
+    mock_log.write_text("tperiod=-1.0e-9\nfreq=-1e9\navgpower=0.05\n", encoding='utf-8')
+
+    extractor = MetricExtractor(num_stages=5)
+    metrics = extractor.extract_from_log(mock_log)
+
+    assert metrics["status"] == "NO_OSCILLATION"
+    assert metrics["is_oscillating"] is False
+    assert metrics["freq_hz"] is None
 
 
 if __name__ == "__main__":
