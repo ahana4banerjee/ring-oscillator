@@ -25,8 +25,35 @@ from src.ltspice.parser import LTspiceLogParser
 class MetricExtractor:
     """Extracts raw electrical metrics and computes derived ring oscillator performance metrics."""
 
-    def __init__(self, num_stages: int = 5):
-        self.num_stages = num_stages
+    def __init__(self, num_stages: int = 5, stages: Optional[int] = None):
+        self.num_stages = stages if stages is not None else num_stages
+
+    def extract(self, sim_result: Union[str, Path, Any]) -> Dict[str, Any]:
+        """Extract metrics from either a SimulationResult instance or a log file path.
+
+        Args:
+            sim_result: SimulationResult object or path to .log file.
+
+        Returns:
+            Dictionary containing electrical metrics and status flags.
+        """
+        if hasattr(sim_result, "log_path"):
+            if not getattr(sim_result, "success", False) or getattr(sim_result, "log_path", None) is None:
+                return {
+                    "status": "SIMULATION_FAILED",
+                    "error_message": getattr(sim_result, "error_message", "Simulation failed"),
+                    "is_oscillating": False,
+                    "freq_hz": None,
+                    "freq_ghz": None,
+                    "period_s": None,
+                    "power_w": None,
+                    "power_mw": None,
+                    "delay_s": None,
+                    "delay_ps": None,
+                    "pdp_j": None
+                }
+            return self.extract_from_log(sim_result.log_path)
+        return self.extract_from_log(sim_result)
 
     def extract_from_log(self, log_path: Union[str, Path]) -> Dict[str, Any]:
         """Parse log file and return a dictionary of raw and derived metrics.
