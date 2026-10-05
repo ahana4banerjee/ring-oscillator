@@ -15,7 +15,7 @@ This document serves as the **chronological engineering journal, decision log, a
 
 - **Project Goal:** Build an automated Python-LTspice optimization framework to optimize transistor widths ($W_n, W_p$) for a 5-stage CMOS ring oscillator across frequency ($f_{osc}$), average power dissipation ($P_{avg}$), and stage propagation delay ($t_{pd}$).
 - **Target Optimization Algorithms:** Bayesian Optimization (primary, sample-efficient) vs. Random Search (unbiased baseline).
-- **Current Completion Status:** **Phases 0 through 4 Complete & Verified (14/14 unit tests passing). Phase 5 Methodology Staged in SRS.md.**
+- **Current Completion Status:** **Phases 0 through 4 and Phase 5.1 Complete & Verified (19/19 unit tests passing).**
 
 ---
 
@@ -158,6 +158,24 @@ This document serves as the **chronological engineering journal, decision log, a
   - *Decision:* $V_{DD} = 1.8\text{V}$ (`TBD-02`) remains **UNRESOLVED** as a temporary development value.
   - *Constraint:* No source code, test modifications, or experiment executions were performed during this methodology update step.
 
+---
+
+### Phase 5.1: Random Search Implementation
+- **Date / Status:** Executed & Verified (Phase 5.1)
+- **Objective:** Implement the Random Search optimizer module conforming to the common `BaseOptimizer` interface (`suggest()`, `register()`, `get_history()`, `get_best_candidate()`).
+- **Key Actions Taken:**
+  1. Created `src/optimization/base.py`:
+     - Defined `BaseOptimizer` abstract class declaring uniform optimizer contract.
+     - Implemented candidate history tracking (`self.history`) and best feasible candidate tracking (`self.best_candidate_record`).
+  2. Created `src/optimization/random_search.py`:
+     - Implemented `RandomSearchOptimizer` supporting continuous uniform i.i.d. sampling over $[W_{n,min}, W_{n,max}]$ and $[W_{p,min}, W_{p,max}]$.
+     - Added optional DRC grid snapping (`step_size`, e.g. $10\text{ nm}$).
+     - Added deterministic seed reproducibility via `np.random.RandomState(seed)`.
+     - Integrated `evaluate_candidate` helper linking `parameterizer`, `runner`, `extractor`, and `objective_evaluator`.
+  3. Created `tests/test_random_search.py`:
+     - Verification of bounds enforcement, seed reproducibility, grid snapping, history tracking, and invalid bound error handling.
+  4. Updated `configs/optimization_config.yaml`:
+     - Set `wn_max: 0.80e-6` and `wp_max: 1.60e-6` matching the temporary development bounds defined in SRS Phase 5.3.
 
 ---
 
@@ -196,7 +214,7 @@ This document serves as the **chronological engineering journal, decision log, a
 
 ## Verification & Test Suite Ledger
 
-All 14 automated unit tests currently pass cleanly (`pytest tests/`):
+All 19 automated unit tests currently pass cleanly (`pytest tests/`):
 
 ```text
 tests/test_extractor.py::test_log_parser_success PASSED
@@ -210,6 +228,11 @@ tests/test_objective.py::test_baseline_evaluator_balanced PASSED
 tests/test_objective.py::test_speed_biased_evaluator PASSED
 tests/test_objective.py::test_penalty_handling_non_oscillating PASSED
 tests/test_objective.py::test_pdp_mode PASSED
+tests/test_random_search.py::test_random_search_bounds_enforcement PASSED
+tests/test_random_search.py::test_random_search_reproducibility PASSED
+tests/test_random_search.py::test_random_search_grid_snapping PASSED
+tests/test_random_search.py::test_random_search_register_and_best_tracking PASSED
+tests/test_random_search.py::test_random_search_invalid_bounds_error PASSED
 tests/test_runner.py::test_spice_engineering_formatting PASSED
 tests/test_runner.py::test_parameterizer_generation PASSED
 tests/test_runner.py::test_headless_ltspice_runner PASSED
@@ -224,3 +247,4 @@ Whenever a new phase or feature is implemented:
 2. Document inputs, outputs, code changes, and empirical test results.
 3. Record any bugs, root causes, and fixes in the **Technical Audit & Sanity Check Log**.
 4. Update the **Completion Status** summary.
+
