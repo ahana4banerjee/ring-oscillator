@@ -15,7 +15,7 @@ This document serves as the **chronological engineering journal, decision log, a
 
 - **Project Goal:** Build an automated Python-LTspice optimization framework to optimize transistor widths ($W_n, W_p$) for a 5-stage CMOS ring oscillator across frequency ($f_{osc}$), average power dissipation ($P_{avg}$), and stage propagation delay ($t_{pd}$).
 - **Target Optimization Algorithms:** Bayesian Optimization (primary, sample-efficient) vs. Random Search (unbiased baseline).
-- **Current Completion Status:** **Phases 0 through 4, Phase 5.1, Phase 5.2, and Phase 5.3 Complete & Verified (20/20 unit/integration tests passing).**
+- **Current Completion Status:** **Phases 0 through 4, Phase 5.1, Phase 5.2, Phase 5.3, and Phase 5.4 Complete & Verified (20/20 unit/integration tests passing).**
 
 ---
 
@@ -242,6 +242,30 @@ This document serves as the **chronological engineering journal, decision log, a
   - Failed / Non-Oscillating: 18 (90.0%)
   - Wall-clock Execution Time: 20.34s (~1.02s per simulation)
   - **Best Candidate in 20-Sample Dataset:** Iteration 8 ($W_n = 0.2900\,\mu\text{m}, W_p = 0.5900\,\mu\text{m}$) yielding score $\mathcal{F} = +0.585540$ ($50.041\text{ GHz}, 82.616\text{ mW}, 2.00\text{ ps}$).
+
+---
+
+### Phase 5.4: Search-Space Characterization
+- **Date / Status:** Executed & Documented (Phase 5.4)
+- **Objective:** Analyze the 20-iteration Phase 5.3 dataset (`experiment_log.csv`) and underlying CMOS circuit physics to characterize feasible vs. infeasible search regions before freezing final search bounds in Phase 5.5.
+- **Key Findings & Characterization Metrics:**
+  1. **Feasibility Distribution:**
+     - 2 / 20 candidates (10.0%) evaluated to `SUCCESS`.
+     - 18 / 20 candidates (90.0%) evaluated to `NO_OSCILLATION` (penalty score $-1.0\times 10^9$).
+  2. **Feasible Region Sizing Corridor:**
+     - Both successful candidates clustered tightly near minimum geometry ($W_n \approx 0.28 - 0.29\,\mu\text{m}$, $W_p \approx 0.55 - 0.59\,\mu\text{m}$), satisfying $W_p / W_n \approx 1.96 - 2.03 \approx 2.0$.
+     - Low parasitic gate capacitance ($C_g \propto W \cdot L$) at minimum geometry enables rapid transient oscillation startup and low propagation delay ($t_{pd} \approx 2.0 - 7.97\text{ ps}$).
+  3. **Infeasible Region Clustering:**
+     - *High Sizing Asymmetry ($W_p / W_n > 3.0$ or $W_p / W_n < 1.2$):* Inverter trip point skews away from $0.5 V_{DD} = 0.9\text{V}$, preventing sustained rail-to-rail oscillation.
+     - *Large Channel Width ($W_n > 0.35\,\mu\text{m}$ or $W_n + W_p > 1.2\,\mu\text{m}$):* Increased RC node delay slows down startup oscillation build-up beyond the 100ns transient window.
+  4. **Objective Utility Landscape:**
+     - Iter 8 ($W_n=0.29\mu\text{m}, W_p=0.59\mu\text{m}$): Highest utility score $\mathcal{F} = +0.585540$ ($f_{osc}=50.041\text{ GHz}, P_{avg}=82.616\text{ mW}$).
+     - *Constraint:* This point is strictly the best sample within the 20-sample development dataset, NOT the final global optimum.
+  5. **Search Bound Assessment:**
+     - Temporary bounds ($W_n \in [0.18\mu\text{m}, 0.80\mu\text{m}]$, $W_p \in [0.36\mu\text{m}, 1.60\mu\text{m}]$) are reasonably broad for initial landscape discovery, but display 90% infeasibility density in upper bounds ($W_n > 0.4\mu\text{m}$).
+  6. **Evidence-based Guidance for Phase 5.5:**
+     - Recommends focusing final bounds closer to the feasible corridor ($W_n \in [0.18\mu\text{m}, 0.50\mu\text{m}]$, $W_p \in [0.36\mu\text{m}, 1.20\mu\text{m}]$) to optimize sample efficiency for Bayesian Optimization, or extending $t_{stop}$ if wider sizing exploration is desired.
+- **Artifact Generated:** `results/plots/phase5_4_search_space.png` (2D feasibility scatter plot).
 
 ---
 
