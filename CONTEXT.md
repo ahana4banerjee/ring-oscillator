@@ -15,7 +15,7 @@ This document serves as the **chronological engineering journal, decision log, a
 
 - **Project Goal:** Build an automated Python-LTspice optimization framework to optimize transistor widths ($W_n, W_p$) for a 5-stage CMOS ring oscillator across frequency ($f_{osc}$), average power dissipation ($P_{avg}$), and stage propagation delay ($t_{pd}$).
 - **Target Optimization Algorithms:** Bayesian Optimization (primary, sample-efficient) vs. Random Search (unbiased baseline).
-- **Current Completion Status:** **Phases 0 through 4 Complete & Verified (14/14 unit tests passing).**
+- **Current Completion Status:** **Phases 0 through 4 Complete & Verified (14/14 unit tests passing). Phase 5 Methodology Staged in SRS.md.**
 
 ---
 
@@ -134,6 +134,30 @@ This document serves as the **chronological engineering journal, decision log, a
   - `tests/test_objective.py` (Unit tests for scoring & penalty)
   - `tests/test_extractor.py` (Added Candidate 1 & Candidate 3 regression tests)
   - `scripts/verify_phase4.py`
+
+---
+
+### Phase 5 Methodology Refinement: Staged Random Search & Search-Space Characterization
+- **Date / Status:** Executed & Documented (Phase 5 Methodology Staging)
+- **Objective:** Restructure Phase 5 into a 5-stage workflow (5.1–5.5) to treat Random Search as a landscape exploration tool and establish evidence-based final $W_n/W_p$ search bounds before Bayesian Optimization.
+- **Key Actions Taken:**
+  1. Updated `SRS.md` Section 16 with the 5-stage Phase 5 structure:
+     - **Phase 5.1 — Random Search Implementation:** Build `src/optimization/random_search.py` conforming to common optimizer interface.
+     - **Phase 5.2 — Random Search Smoke Test:** 5-iteration pipeline validation test.
+     - **Phase 5.3 — Development Random Search Run:** 20-iteration baseline run over temporary bounds ($W_n \in [0.18\mu\text{m}, 0.80\mu\text{m}]$, $W_p \in [0.36\mu\text{m}, 1.60\mu\text{m}]$).
+     - **Phase 5.4 — Search-Space Characterization:** Analyze feasible vs infeasible regions, frequency/power trade-offs, and parameter space landscape.
+     - **Phase 5.5 — Final Search-Bound Decision:** Formally freeze final $W_n/W_p$ search bounds based on circuit constraints and empirical characterization, resolving `TBD-03`.
+  2. Clarified Phase 6 Bayesian Optimization Methodology in `SRS.md`:
+     - Explicitly stated that BO will **NOT** simply search around the best Random Search point.
+     - BO will fit a continuous Gaussian Process surrogate $(W_n, W_p) \to \mathcal{F}$ and balance exploration/exploitation across the frozen final bounds.
+  3. Clarified Phase 8 Fair Comparison Principles in `SRS.md`:
+     - Mandated identical final bounds, objective formulation, validity rules, execution harness, and evaluation budgets for BO vs. RS benchmarks.
+  4. Updated `README.md` to reflect the staged Phase 5 structure, temporary bounds note, and BO start prerequisites.
+- **Decisions & Status:**
+  - *Decision:* `TBD-03` (Search Space Bounds) remains **UNRESOLVED** until Phase 5.5 is formally completed.
+  - *Decision:* $V_{DD} = 1.8\text{V}$ (`TBD-02`) remains **UNRESOLVED** as a temporary development value.
+  - *Constraint:* No source code, test modifications, or experiment executions were performed during this methodology update step.
+
 
 ---
 
