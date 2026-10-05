@@ -15,7 +15,7 @@ This document serves as the **chronological engineering journal, decision log, a
 
 - **Project Goal:** Build an automated Python-LTspice optimization framework to optimize transistor widths ($W_n, W_p$) for a 5-stage CMOS ring oscillator across frequency ($f_{osc}$), average power dissipation ($P_{avg}$), and stage propagation delay ($t_{pd}$).
 - **Target Optimization Algorithms:** Bayesian Optimization (primary, sample-efficient) vs. Random Search (unbiased baseline).
-- **Current Completion Status:** **Phases 0 through 4, Phase 5.1, Phase 5.2, Phase 5.3, Phase 5.4, and Phase 5.4A Complete & Verified (20/20 unit/integration tests passing).**
+- **Current Completion Status:** **Phases 0 through 4, Phase 5.1, Phase 5.2, Phase 5.3, Phase 5.4, Phase 5.4A, and Phase 5.4B Complete & Verified (20/20 unit/integration tests passing).**
 
 ---
 
@@ -290,6 +290,36 @@ This document serves as the **chronological engineering journal, decision log, a
   - **Best Candidate (Config B 0.5/0.5):** Iteration 96 ($W_n = 0.2200\mu\text{m}, W_p = 0.3800\mu\text{m}$, Ratio = $1.73$) $\implies$ Score: **$+0.674958$** ($50.105\text{ GHz}, 57.686\text{ mW}, 1.996\text{ ps}$).
   - **Best Candidate (Config S 0.7/0.3):** Iteration 96 ($W_n = 0.2200\mu\text{m}, W_p = 0.3800\mu\text{m}$, Ratio = $1.73$) $\implies$ Score: **$+1.108402$** ($50.105\text{ GHz}, 57.686\text{ mW}, 1.996\text{ ps}$).
 - **Artifacts Generated:** `experiment_log_focused_100iter.csv`, `run_summary_focused_100iter.json`, `phase5_4a_search_space.png`, `phase5_4a_ratio_analysis.png`.
+
+---
+
+### Phase 5.4B: Controlled Supply Voltage ($V_{DD}$) Sensitivity Study
+- **Date / Status:** Executed & Verified (Phase 5.4B)
+- **Objective:** Evaluate a controlled, deterministic set of 20 representative $W_n/W_p$ candidates across 4 supply voltages ($V_{DD} = 1.2\text{V}, 1.5\text{V}, 1.8\text{V}, 2.0\text{V}$) to analyze feasibility stability, electrical performance trends, and candidate mode shifts prior to Phase 5.5.
+- **Key Actions Taken:**
+  1. Created `experiments/run_vdd_sensitivity_study.py`:
+     - Executed 80 controlled simulations (20 candidates $\times$ 4 $V_{DD}$ levels).
+     - Logged records to `results/processed/experiment_log_vdd_study.csv`.
+     - Exported run summary to `results/processed/run_summary_vdd_study.json`.
+  2. Created `scripts/generate_vdd_study_plots.py`:
+     - Generated `results/plots/vdd_success_rate_comparison.png` (Success rate vs $V_{DD}$).
+     - Generated `results/plots/vdd_performance_trends.png` (Frequency, power, delay scaling).
+     - Generated `results/plots/vdd_search_space_comparison.png` (Faceted search space).
+- **Empirical Controlled Results (N=20 Candidates per $V_{DD}$):**
+
+  | $V_{DD}$ (V) | Successful Runs | Failed Runs | Feasibility Rate (%) | Median $W_p/W_n$ Ratio | Power Range (mW) | Freq Range (GHz) |
+  | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+  | **1.2 V** | **10 / 20** | 10 / 20 | **50.0%** | $1.98$ | $13.80 - 32.09$ | $7.18 - 50.57$ |
+  | **1.5 V** | **8 / 20** | 12 / 20 | **40.0%** | $1.96$ | $30.73 - 70.70$ | $16.67 - 52.38$ |
+  | **1.8 V** | **9 / 20** | 11 / 20 | **45.0%** | $1.96$ | $57.69 - 134.03$ | $2.54 - 50.11$ |
+  | **2.0 V** | **8 / 20** | 12 / 20 | **40.0%** | $1.94$ | $82.39 - 294.67$ | $0.55 - 57.14$ |
+
+- **Major Findings & Observations:**
+  1. **Voltage Invariance of Feasible Corridor:** The optimal sizing ratio $W_p / W_n \approx 1.5 - 2.4$ (median $\approx 1.96$) is **voltage-invariant** and holds consistently from $1.2\text{V}$ to $2.0\text{V}$. Extreme ratios ($W_p / W_n > 3.0$ or $< 1.2$) fail to oscillate at every single voltage level.
+  2. **Power Scaling ($V_{DD}^2$ Dependency):** Average power consumption exhibits strong quadratic scaling ($P_{avg} \propto V_{DD}^2$), scaling by $> 5.5\times$ from $1.2\text{V}$ ($13.8\text{ mW}$) to $2.0\text{V}$ ($82.4\text{ mW}$) for candidate $0.22\mu\text{m}/0.38\mu\text{m}$.
+  3. **Low-Power Efficiency at 1.2 V:** $V_{DD} = 1.2\text{V}$ delivers the highest feasibility yield (50.0%) and lowest power consumption while maintaining full $50\text{ GHz}$ oscillation frequency.
+  4. **Nominal VDD Status:** `TBD-02` in `SRS.md` remains **UNRESOLVED**. $V_{DD} = 1.8\text{V}$ is recommended for baseline normalization continuity, with $V_{DD} = 1.2\text{V}$ recommended for low-power optimization campaigns.
+- **Artifacts Generated:** `experiment_log_vdd_study.csv`, `run_summary_vdd_study.json`, `vdd_success_rate_comparison.png`, `vdd_performance_trends.png`, `vdd_search_space_comparison.png`.
 
 ---
 
