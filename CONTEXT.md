@@ -15,7 +15,7 @@ This document serves as the **chronological engineering journal, decision log, a
 
 - **Project Goal:** Build an automated Python-LTspice optimization framework to optimize transistor widths ($W_n, W_p$) for a 5-stage CMOS ring oscillator across frequency ($f_{osc}$), average power dissipation ($P_{avg}$), and stage propagation delay ($t_{pd}$).
 - **Target Optimization Algorithms:** Bayesian Optimization (primary, sample-efficient) vs. Random Search (unbiased baseline).
-- **Current Completion Status:** **Phases 0 through 4, Phase 5.1, and Phase 5.2 Complete & Verified (20/20 unit/integration tests passing).**
+- **Current Completion Status:** **Phases 0 through 4, Phase 5.1, Phase 5.2, and Phase 5.3 Complete & Verified (20/20 unit/integration tests passing).**
 
 ---
 
@@ -201,8 +201,47 @@ This document serves as the **chronological engineering journal, decision log, a
   | **4** | $0.2200$ | $1.4300$ | `NO_OSCILLATION` | N/A | N/A | N/A | $-1.0 \times 10^9$ |
   | **5** | $0.5500$ | $1.2400$ | `NO_OSCILLATION` | N/A | N/A | N/A | $-1.0 \times 10^9$ |
 
-  - **Best Candidate Identified:** $W_n = 0.2800\,\mu\text{m}, W_p = 0.5500\,\mu\text{m}$ (Score: $-0.057308$).
-  - **Artifacts Generated:** `results/processed/smoke_test_log.csv` and `results/processed/smoke_test_summary.json`.
+---
+
+### Phase 5.3: Development Random Search Campaign Run
+- **Date / Status:** Executed & Verified (Phase 5.3)
+- **Objective:** Run a reproducible 20-iteration Random Search campaign (`seed=42`) using temporary development search bounds ($W_n \in [0.18\mu\text{m}, 0.80\mu\text{m}]$, $W_p \in [0.36\mu\text{m}, 1.60\mu\text{m}]$), log results to structured CSV, and establish the baseline dataset for Phase 5.4 search-space characterization.
+- **Key Actions Taken:**
+  1. Created `experiments/run_random_search.py`:
+     - Automated 20-iteration execution loop with `seed=42`.
+     - Logged all 20 candidate evaluations to `results/processed/experiment_log.csv`.
+     - Exported run summary artifact to `results/processed/run_summary.json`.
+- **Empirical 20-Iteration Campaign Results (`seed=42`):**
+
+  | Iter | $W_n$ ($\mu\text{m}$) | $W_p$ ($\mu\text{m}$) | $W_p/W_n$ Ratio | Status | Freq ($f_{osc}$) | Avg Power ($P_{avg}$) | Stage Delay ($t_{pd}$) | Score ($\mathcal{F}$) |
+  | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+  | 1 | 0.4100 | 1.5400 | 3.76 | `NO_OSCILLATION` | N/A | N/A | N/A | $-1.0\times 10^9$ |
+  | 2 | 0.6300 | 1.1000 | 1.75 | `NO_OSCILLATION` | N/A | N/A | N/A | $-1.0\times 10^9$ |
+  | 3 | 0.2800 | 0.5500 | 1.96 | **`SUCCESS`** | **12.552 GHz** | **78.365 mW** | **7.97 ps** | **$-0.057308$** |
+  | 4 | 0.2200 | 1.4300 | 6.50 | `NO_OSCILLATION` | N/A | N/A | N/A | $-1.0\times 10^9$ |
+  | 5 | 0.5500 | 1.2400 | 2.25 | `NO_OSCILLATION` | N/A | N/A | N/A | $-1.0\times 10^9$ |
+  | 6 | 0.1900 | 1.5600 | 8.21 | `NO_OSCILLATION` | N/A | N/A | N/A | $-1.0\times 10^9$ |
+  | 7 | 0.7000 | 0.6200 | 0.89 | `NO_OSCILLATION` | N/A | N/A | N/A | $-1.0\times 10^9$ |
+  | 8 | 0.2900 | 0.5900 | 2.03 | **`SUCCESS`** | **50.041 GHz** | **82.616 mW** | **2.00 ps** | **$+0.585540$** |
+  | 9 | 0.3700 | 1.0100 | 2.73 | `NO_OSCILLATION` | N/A | N/A | N/A | $-1.0\times 10^9$ |
+  | 10 | 0.4500 | 0.7200 | 1.60 | `NO_OSCILLATION` | N/A | N/A | N/A | $-1.0\times 10^9$ |
+  | 11 | 0.5600 | 0.5300 | 0.95 | `NO_OSCILLATION` | N/A | N/A | N/A | $-1.0\times 10^9$ |
+  | 12 | 0.3600 | 0.8100 | 2.25 | `NO_OSCILLATION` | N/A | N/A | N/A | $-1.0\times 10^9$ |
+  | 13 | 0.4600 | 1.3300 | 2.89 | `NO_OSCILLATION` | N/A | N/A | N/A | $-1.0\times 10^9$ |
+  | 14 | 0.3000 | 1.0000 | 3.33 | `NO_OSCILLATION` | N/A | N/A | N/A | $-1.0\times 10^9$ |
+  | 15 | 0.5500 | 0.4200 | 0.76 | `NO_OSCILLATION` | N/A | N/A | N/A | $-1.0\times 10^9$ |
+  | 16 | 0.5600 | 0.5700 | 1.02 | `NO_OSCILLATION` | N/A | N/A | N/A | $-1.0\times 10^9$ |
+  | 17 | 0.2200 | 1.5400 | 7.00 | `NO_OSCILLATION` | N/A | N/A | N/A | $-1.0\times 10^9$ |
+  | 18 | 0.7800 | 1.3600 | 1.74 | `NO_OSCILLATION` | N/A | N/A | N/A | $-1.0\times 10^9$ |
+  | 19 | 0.3700 | 0.4800 | 1.30 | `NO_OSCILLATION` | N/A | N/A | N/A | $-1.0\times 10^9$ |
+  | 20 | 0.6000 | 0.9100 | 1.52 | `NO_OSCILLATION` | N/A | N/A | N/A | $-1.0\times 10^9$ |
+
+- **Campaign Summary Statistics:**
+  - Total Evaluations: 20
+  - Successful (Valid Oscillation): 2 (10.0%)
+  - Failed / Non-Oscillating: 18 (90.0%)
+  - Wall-clock Execution Time: 20.34s (~1.02s per simulation)
+  - **Best Candidate in 20-Sample Dataset:** Iteration 8 ($W_n = 0.2900\,\mu\text{m}, W_p = 0.5900\,\mu\text{m}$) yielding score $\mathcal{F} = +0.585540$ ($50.041\text{ GHz}, 82.616\text{ mW}, 2.00\text{ ps}$).
 
 ---
 
