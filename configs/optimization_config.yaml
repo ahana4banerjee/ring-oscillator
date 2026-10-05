@@ -19,9 +19,9 @@ simulation:
 
 search_space:
   wn_min: 0.18e-6
-  wn_max: 2.0e-6
+  wn_max: 0.80e-6
   wp_min: 0.36e-6
-  wp_max: 4.0e-6
+  wp_max: 1.60e-6
   step_size: 10e-9             # Grid snapping (10nm)
 
 normalization:
