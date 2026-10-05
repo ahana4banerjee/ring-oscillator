@@ -15,7 +15,7 @@ This document serves as the **chronological engineering journal, decision log, a
 
 - **Project Goal:** Build an automated Python-LTspice optimization framework to optimize transistor widths ($W_n, W_p$) for a 5-stage CMOS ring oscillator across frequency ($f_{osc}$), average power dissipation ($P_{avg}$), and stage propagation delay ($t_{pd}$).
 - **Target Optimization Algorithms:** Bayesian Optimization (primary, sample-efficient) vs. Random Search (unbiased baseline).
-- **Current Completion Status:** **Phases 0 through 4 and Phase 5.1 Complete & Verified (19/19 unit tests passing).**
+- **Current Completion Status:** **Phases 0 through 4, Phase 5.1, and Phase 5.2 Complete & Verified (20/20 unit/integration tests passing).**
 
 ---
 
@@ -179,6 +179,33 @@ This document serves as the **chronological engineering journal, decision log, a
 
 ---
 
+### Phase 5.2: Random Search Smoke Test
+- **Date / Status:** Executed & Verified (Phase 5.2)
+- **Objective:** Execute a 5-iteration end-to-end Random Search pipeline validation test verifying LTspice subprocess execution, validity checks, extraction, scoring, CSV logging, best-candidate tracking, and seed reproducibility.
+- **Key Actions Taken:**
+  1. Created `src/utils/logger.py`:
+     - Implemented `ExperimentLogger` for atomic CSV log appending (`results/processed/smoke_test_log.csv`) and JSON summary writing (`results/processed/smoke_test_summary.json`).
+  2. Enhanced `src/evaluation/extractor.py`:
+     - Added `extract` method handling both `SimulationResult` objects and file paths cleanly.
+  3. Developed `scripts/smoke_test_random_search.py`:
+     - Implemented 5-iteration smoke test runner using `seed=42` over temporary development search bounds ($W_n \in [0.18\mu\text{m}, 0.80\mu\text{m}]$, $W_p \in [0.36\mu\text{m}, 1.60\mu\text{m}]$).
+  4. Developed `tests/test_random_search_integration.py`:
+     - Added automated integration test suite validating end-to-end 5-iteration loop execution.
+- **Empirical 5-Iteration Smoke Test Output (Seed 42):**
+
+  | Iter | $W_n$ ($\mu\text{m}$) | $W_p$ ($\mu\text{m}$) | Status | Freq ($f_{osc}$) | Avg Power ($P_{avg}$) | Stage Delay ($t_{pd}$) | Score ($\mathcal{F}$) |
+  | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+  | **1** | $0.4100$ | $1.5400$ | `NO_OSCILLATION` | N/A | N/A | N/A | $-1.0 \times 10^9$ |
+  | **2** | $0.6300$ | $1.1000$ | `NO_OSCILLATION` | N/A | N/A | N/A | $-1.0 \times 10^9$ |
+  | **3** | $0.2800$ | $0.5500$ | **`SUCCESS`** | **12.552 GHz** | **78.365 mW** | **7.97 ps** | **$-0.057308$** |
+  | **4** | $0.2200$ | $1.4300$ | `NO_OSCILLATION` | N/A | N/A | N/A | $-1.0 \times 10^9$ |
+  | **5** | $0.5500$ | $1.2400$ | `NO_OSCILLATION` | N/A | N/A | N/A | $-1.0 \times 10^9$ |
+
+  - **Best Candidate Identified:** $W_n = 0.2800\,\mu\text{m}, W_p = 0.5500\,\mu\text{m}$ (Score: $-0.057308$).
+  - **Artifacts Generated:** `results/processed/smoke_test_log.csv` and `results/processed/smoke_test_summary.json`.
+
+---
+
 ## Technical Audit & Sanity Check Log (Regression & Deep-Dives)
 
 ### Investigation Case 1: Candidate 3 ($W_n = 0.18\mu\text{m}, W_p = 0.36\mu\text{m}$) — 50.0 GHz Result
@@ -214,7 +241,7 @@ This document serves as the **chronological engineering journal, decision log, a
 
 ## Verification & Test Suite Ledger
 
-All 19 automated unit tests currently pass cleanly (`pytest tests/`):
+All 20 automated unit and integration tests currently pass cleanly (`pytest tests/`):
 
 ```text
 tests/test_extractor.py::test_log_parser_success PASSED
@@ -233,6 +260,7 @@ tests/test_random_search.py::test_random_search_reproducibility PASSED
 tests/test_random_search.py::test_random_search_grid_snapping PASSED
 tests/test_random_search.py::test_random_search_register_and_best_tracking PASSED
 tests/test_random_search.py::test_random_search_invalid_bounds_error PASSED
+tests/test_random_search_integration.py::test_random_search_5_iteration_smoke_loop PASSED
 tests/test_runner.py::test_spice_engineering_formatting PASSED
 tests/test_runner.py::test_parameterizer_generation PASSED
 tests/test_runner.py::test_headless_ltspice_runner PASSED
