@@ -15,7 +15,7 @@ This document serves as the **chronological engineering journal, decision log, a
 
 - **Project Goal:** Build an automated Python-LTspice optimization framework to optimize transistor widths ($W_n, W_p$) for a 5-stage CMOS ring oscillator across frequency ($f_{osc}$), average power dissipation ($P_{avg}$), and stage propagation delay ($t_{pd}$).
 - **Target Optimization Algorithms:** Bayesian Optimization (primary, sample-efficient) vs. Random Search (unbiased baseline).
-- **Current Completion Status:** **Phases 0 through 4, Phase 5.1, Phase 5.2, Phase 5.3, and Phase 5.4 Complete & Verified (20/20 unit/integration tests passing).**
+- **Current Completion Status:** **Phases 0 through 4, Phase 5.1, Phase 5.2, Phase 5.3, Phase 5.4, and Phase 5.4A Complete & Verified (20/20 unit/integration tests passing).**
 
 ---
 
@@ -266,6 +266,30 @@ This document serves as the **chronological engineering journal, decision log, a
   6. **Evidence-based Guidance for Phase 5.5:**
      - Recommends focusing final bounds closer to the feasible corridor ($W_n \in [0.18\mu\text{m}, 0.50\mu\text{m}]$, $W_p \in [0.36\mu\text{m}, 1.20\mu\text{m}]$) to optimize sample efficiency for Bayesian Optimization, or extending $t_{stop}$ if wider sizing exploration is desired.
 - **Artifact Generated:** `results/plots/phase5_4_search_space.png` (2D feasibility scatter plot).
+
+---
+
+### Phase 5.4A: Focused Search-Space Validation Campaign
+- **Date / Status:** Executed & Verified (Phase 5.4A)
+- **Objective:** Run a 100-iteration Random Search campaign (`seed=2026`) over focused bounds ($W_n \in [0.18, 0.50]\mu\text{m}$, $W_p \in [0.36, 1.20]\mu\text{m}$) with $10\text{ nm}$ grid snapping to validate spatial continuity, density, and ratio clustering of the feasible oscillation region.
+- **Key Actions Taken:**
+  1. Created `experiments/run_focused_search_space_validation.py`:
+     - Automated 100-iteration execution loop with `seed=2026`.
+     - Output focused CSV ledger to `results/processed/experiment_log_focused_100iter.csv`.
+     - Output JSON summary artifact to `results/processed/run_summary_focused_100iter.json`.
+  2. Created `scripts/generate_phase5_4a_plots.py`:
+     - Generated 2D scatter plot: `results/plots/phase5_4a_search_space.png`.
+     - Generated ratio distribution plot: `results/plots/phase5_4a_ratio_analysis.png`.
+- **Empirical 100-Iteration Validation Summary (`seed=2026`):**
+  - **Total Evaluations:** 100
+  - **Successful (Valid Oscillation):** 17 / 100 (**17.0%**) — an increase from 10.0% in Phase 5.3 due to eliminating $W_n > 0.50\mu\text{m}$ dead zone.
+  - **Failed / Non-Oscillating:** 83 / 100 (83.0%)
+  - **Total Wall Time:** 97.88s (~0.98s per simulation)
+  - **Spatial Clustering:** 15 of 17 successful points (88.2%) clustered in $W_n \le 0.31\mu\text{m}$ and $W_p \in [0.38, 0.65]\mu\text{m}$.
+  - **Ratio Distribution:** Median ratio $W_p / W_n = \mathbf{2.000}$ (Mean: $2.168$). Candidates with $W_p / W_n > 3.2$ or $W_p / W_n < 1.3$ failed in >95% of sampled cases.
+  - **Best Candidate (Config B 0.5/0.5):** Iteration 96 ($W_n = 0.2200\mu\text{m}, W_p = 0.3800\mu\text{m}$, Ratio = $1.73$) $\implies$ Score: **$+0.674958$** ($50.105\text{ GHz}, 57.686\text{ mW}, 1.996\text{ ps}$).
+  - **Best Candidate (Config S 0.7/0.3):** Iteration 96 ($W_n = 0.2200\mu\text{m}, W_p = 0.3800\mu\text{m}$, Ratio = $1.73$) $\implies$ Score: **$+1.108402$** ($50.105\text{ GHz}, 57.686\text{ mW}, 1.996\text{ ps}$).
+- **Artifacts Generated:** `experiment_log_focused_100iter.csv`, `run_summary_focused_100iter.json`, `phase5_4a_search_space.png`, `phase5_4a_ratio_analysis.png`.
 
 ---
 
