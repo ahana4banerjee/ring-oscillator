@@ -370,8 +370,25 @@ This document serves as the **chronological engineering journal, decision log, a
      - Objective module `src/evaluation/objective.py`
      - Verification script `scripts/verify_phase4.py`
      - Test files `tests/test_objective.py` and `tests/test_random_search_integration.py`
-  4. Executed full test suite (`pytest`) to confirm 20/20 test pass rate.
   5. Formally authored `RE_AUDIT_PHASE_0_4.md` declaring the pipeline READY FOR RANDOM SEARCH (Phase 5).
+
+---
+
+### Phase 5 — Initial Exploratory Random Search Campaign (10 Evaluations)
+- **Date / Status:** Executed & Verified (Phase 5 Exploratory)
+- **Objective:** Perform an initial broad 10-evaluation exploratory Random Search over independent $W_n \in [0.15, 1.20]\mu\text{m}$ and $W_p \in [0.30, 2.40]\mu\text{m}$ bounds without pre-constraining $W_p / W_n = 2.0$.
+- **Key Actions Taken:**
+  1. Created `experiments/run_exploratory_random_search_10.py` executing 10 independent evaluations (`seed=42`).
+  2. Recorded candidates, status, frequency, power, period, delay, PDP, and scalar objective scores to `experiments/random_search/exploratory_10/results.csv`.
+  3. Generated feasibility score scatter plot `experiments/random_search/exploratory_10/plots/exploratory_10_feasibility_map.png`.
+  4. Authored comprehensive research report [RANDOM_SEARCH_EXPLORATORY_10.md](RANDOM_SEARCH_EXPLORATORY_10.md).
+- **Empirical Exploratory Results (N=10 Evaluations):**
+  - **Oscillation Feasibility:** $10 / 10$ ($100\%$ valid sustained oscillation).
+  - **Highest Frequency:** $70.044\text{ GHz}$ ($+70.55\%$ vs baseline $41.07\text{ GHz}$) achieved by Iter 1 ($W_n = 0.92\mu\text{m}, W_p = 1.56\mu\text{m}$).
+  - **Lowest Power:** $87.499\mu\text{W}$ ($-37.58\%$ power reduction vs baseline $140.17\mu\text{W}$) achieved by Iter 2 ($W_n = 0.31\mu\text{m}, W_p = 0.63\mu\text{m}$).
+  - **Best Objective Utility Score:** $\mathcal{F} = +0.008816$ achieved by Iter 5 ($W_n = 0.17\mu\text{m}, W_p = 2.34\mu\text{m}$).
+  - **Best Power-Delay Product:** $0.3334\text{ fJ}$ achieved by Iter 5.
+- **Recommended Next Step:** OPTION D (Two-stage Random Search: 50-iteration campaign across refined formal bounds $W_n \in [0.15\mu\text{m}, 1.00\mu\text{m}]$, $W_p \in [0.30\mu\text{m}, 2.00\mu\text{m}]$).
 
 ---
 
