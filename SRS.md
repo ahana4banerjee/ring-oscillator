@@ -208,10 +208,10 @@ Step 9: Optimizer queries acquisition function for next candidate until max_iter
 
 ### 9.1 Variable Definitions
 
-| Variable Name | Symbol | Units | Nature | Grid Step / Resolution | Search Range |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `nmos_width` | $W_n$ | Meters ($\mu\text{m}$) | Continuous or Discrete Grid | `TBD` (e.g., $10\text{ nm}$ or continuous) | $[W_{n,min}, W_{n,max}]$ (`TBD`) |
-| `pmos_width` | $W_p$ | Meters ($\mu\text{m}$) | Continuous or Discrete Grid | `TBD` (e.g., $10\text{ nm}$ or continuous) | $[W_{p,min}, W_{p,max}]$ (`TBD`) |
+| Variable Name | Symbol | Units | Nature | Grid Step / Resolution | Frozen Search Range | Resolution Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `nmos_width` | $W_n$ | Meters ($\mu\text{m}$) | Discrete DRC Grid | $10\text{ nm} = 0.01\mu\text{m}$ | $[0.12\mu\text{m}, 1.20\mu\text{m}]$ | **RESOLVED (TBD-03)** |
+| `pmos_width` | $W_p$ | Meters ($\mu\text{m}$) | Discrete DRC Grid | $10\text{ nm} = 0.01\mu\text{m}$ | $[0.24\mu\text{m}, 2.80\mu\text{m}]$ | **RESOLVED (TBD-03)** |
 
 ### 9.2 Sizing Constraints & Validity Rules
 1. **Physical Aspect Ratio:** $\frac{W_p}{W_n}$ typically lies between $1.0$ and $5.0$ to balance rise/fall times, but the search space may explore beyond this ratio unless explicitly restricted.
@@ -284,13 +284,22 @@ Where:
 - $P_0 = 0.000140169553568\text{ W}$ ($140.169553568\mu\text{W}$), validated baseline power at $1.1\text{V}$ nominal $V_{DD}$
 - $w_f, w_p \ge 0$ are user-specified importance weights satisfying $w_f + w_p = 1.0$
 
-#### Decided Weight Configurations:
-1. **Config B (Balanced):** $w_f = 0.5, w_p = 0.5$
-2. **Config S (Speed-biased):** $w_f = 0.7, w_p = 0.3$
+#### Decided Weight Configurations (Two Objective Scenarios):
+1. **Scenario A — Balanced Objective (Config B):**
+   $$w_f = 0.5, \quad w_p = 0.5 \implies \mathcal{F}_{0.5/0.5} = 0.5 \cdot \left(\frac{f_{osc}}{f_0}\right) - 0.5 \cdot \left(\frac{P_{avg}}{P_0}\right)$$
+   Evaluated during the completed formal 100-evaluation Random Search campaign (yielding best observed candidate Iteration 62 with score $\mathcal{F}_{0.5/0.5} = 0.010923$).
+
+2. **Scenario B — Frequency-Priority Objective (Config S):**
+   $$w_f = 0.7, \quad w_p = 0.3 \implies \mathcal{F}_{0.7/0.3} = 0.7 \cdot \left(\frac{f_{osc}}{f_0}\right) - 0.3 \cdot \left(\frac{P_{avg}}{P_0}\right)$$
+   Investigates how shifting engineering priorities from balanced trade-off optimization to frequency-priority optimization alters parameter selection.
+
+#### Re-scoring Methodology for Scenario B Random Search:
+*Crucial Methodological Distinction:* Random Search candidate sampling locations $(W_n, W_p)$ are independent of the objective weight assignment. Therefore, the Random Search benchmark for Scenario B ($0.7/0.3$) is obtained by **re-scoring the exact same 100 physical LTspice simulations** generated during the formal Random Search campaign. **NO additional circuit simulations are required or performed** for Random Search under Scenario B.
 
 #### Baseline Normalization Consistency:
 Evaluating the baseline candidate ($f_{osc}=f_0, P_{avg}=P_0$) relative to itself under balanced weights ($w_f=0.5, w_p=0.5$) satisfies:
 $$\mathcal{F}_{baseline} = 0.5(1.0) - 0.5(1.0) = 0.0$$
+For Scenario B ($w_f=0.7, w_p=0.3$), the baseline reference evaluates to $0.7(1.0) - 0.3(1.0) = 0.4000$. Relative score differentials $(\mathcal{F} - \mathcal{F}_{baseline})$ maintain mathematical equivalence across candidate comparisons.
 
 #### Penalty Policy for Failed Candidates:
 Candidates that fail to simulate, do not oscillate, or encounter SPICE convergence failures are assigned a scalar penalty score of $\mathcal{F}_{penalty} = -1.0 \times 10^9$. Valid candidates are evaluated using the utility formula without penalty.
@@ -480,96 +489,52 @@ ring-oscillator/
 - **Deliverables:** `src/evaluation/objective.py`.
 - **Completion Criteria:** Unit tests pass verifying valid metric scoring and penalty assignment for invalid/non-oscillating inputs.
 
-### Phase 5 — Random Search and Search-Space Characterization
-**Purpose:** Use Random Search as a development and landscape exploration tool to:
-1. Validate the optimization loop end-to-end,
-2. Establish a Random Search baseline,
-3. Explore the current development search region,
-4. Characterize the feasible/invalid and promising regions,
-5. Provide evidence for deciding the **FINAL** $W_n/W_p$ search bounds before Bayesian Optimization.
+### Phase 5 — Staged & Formal Random Search Campaigns (COMPLETE)
+**Status:** **COMPLETE & VERIFIED**
 
-> [!IMPORTANT]
-> **Temporary Search Bounds Note:** The currently used search bounds ($W_n \in [0.18\mu\text{m}, 0.80\mu\text{m}]$, $W_p \in [0.36\mu\text{m}, 1.60\mu\text{m}]$) are **TEMPORARY DEVELOPMENT BOUNDS ONLY** and do NOT represent the final research search bounds. `TBD-03` remains **UNRESOLVED** until Phase 5.5.
+Phase 5 was executed in two major stages:
+1. **Exploratory Stage (90 Evaluations):** 3 exploratory campaigns (10 pilot + 30 boundary + 50 focused) were executed to map the design space feasibility and identify utility trends. Exploratory findings revealed a primary low-power / high-utility region ($W_n \le 0.30\mu\text{m}, W_p \ge 1.80\mu\text{m}$) and a secondary high-speed region at larger $W_n$.
+2. **Formal Search Bounds Decision (TBD-03 RESOLVED):** Search bounds were formally frozen at:
+   $$W_n \in [0.12\text{ µm}, 1.20\text{ µm}], \quad W_p \in [0.24\text{ µm}, 2.80\text{ µm}], \quad \text{Grid step } = 10\text{ nm } (0.01\mu\text{m})$$
+   *(Note: The lower $W_n$ bound of $0.12\mu\text{m}$ is adopted as a conservative modeling-scope limit for the generic Level-1 MOS model. Exploratory results below $0.15\mu\text{m}$ showed increasing utility, but these results represent model extrapolation rather than calibrated physical 40 nm behavior).*
+3. **Formal Random Search Campaign (100 Evaluations, Seed 2026):**
+   - **Evaluations:** 100 physical LTspice simulations executed independently under seed `2026`.
+   - **Feasibility:** 100 / 100 valid oscillating simulations (100.0% feasibility; 99 unique sizing pairs, 1 duplicate).
+   - **Best Observed Formal Candidate (Scenario A 0.5/0.5):** Iteration 62 ($W_n = 0.19\mu\text{m}, W_p = 2.66\mu\text{m}$, Ratio = 14.00) yielding $\mathcal{F}_{0.5/0.5} = 0.010923$ ($35.37\text{ GHz}, 117.65\mu\text{W}, 2.83\text{ ps}, 0.3326\text{ fJ}$).
+   - **Scenario B Re-scoring (0.7/0.3):** Obtained by re-scoring the exact same 100 physical simulations without running additional simulations.
 
-#### Phase 5.1 — Random Search Implementation
-- **Description:** Implement the Random Search optimizer (`src/optimization/random_search.py`) conforming to the common optimizer interface.
-- **Responsibilities:**
-  - Generate $W_n/W_p$ candidate vectors using reproducible uniform random sampling within configurable bounds.
-  - Interface seamlessly with the existing simulation harness (`runner.py`), metric extractor (`extractor.py`), and objective evaluator (`objective.py`).
-  - Apply oscillation validity checks, extract electrical metrics, compute objective utility, track evaluation status, and gracefully handle non-oscillating/failed candidates.
+### Phase 6: Bayesian Optimization Engine (PLANNED / NEXT PHASE)
+**Status:** **NOT STARTED (PLANNED)**
 
-#### Phase 5.2 — Random Search Smoke Test
-- **Description:** Execute a small 5-iteration development test (`pytest` integration or smoke script) to verify the end-to-end execution loop.
-- **Verification Checklist:** Candidate generation, bounds enforcement, parameter substitution, headless LTspice execution, validity classification, metric extraction, objective scoring, CSV log recording, best-candidate tracking, and deterministic seed reproducibility.
-- *Note: This is a pipeline validation step, NOT the final Random Search experiment.*
+Bayesian Optimization will be executed in the upcoming phase across two independent experimental campaigns:
+- **BO Experiment A (Balanced Objective 0.5/0.5):** Fixed budget of 100 physical LTspice evaluations over frozen bounds $[0.12, 1.20]\mu\text{m} \times [0.24, 2.80]\mu\text{m}$.
+- **BO Experiment B (Frequency-Priority Objective 0.7/0.3):** Fixed budget of 100 physical LTspice evaluations over frozen bounds $[0.12, 1.20]\mu\text{m} \times [0.24, 2.80]\mu\text{m}$.
+- **Methodology Principles:**
+  - BO will fit a Gaussian Process (GP) surrogate $(W_n, W_p) \to \mathcal{F}$ and utilize an acquisition function (e.g., Expected Improvement) to balance exploration and exploitation across the frozen search space.
+  - BO will execute with identical bounds, baseline normalization, grid snapping ($10\text{ nm}$), circuit topology, and simulation harness as Random Search.
 
-#### Phase 5.3 — Development Random Search Run
-- **Description:** Run a reproducible 20-iteration Random Search campaign using the temporary development search bounds.
-- **Purpose:** Establish the Random Search baseline dataset, collect structured experimental candidate logs, observe design space behavior, and identify valid/invalid and promising performance regions.
-- **Data Persistence:** Every candidate is recorded in `results/processed/experiment_log.csv` containing candidate parameters ($W_n, W_p$), simulation status, raw metrics ($f_{osc}, P_{avg}, t_{pd}$), normalized metrics, and scalar objective scores.
-- *Constraint:* The best candidate from this run is **NOT** treated as the final optimization answer, nor is the search space automatically shrunk around it.
+### Phase 7: Experiment Logging, Persistence & Visualization (COMPLETE)
+- **Deliverables:** `experiments/run_formal_random_search_100.py`, `experiments/analyze_formal_100.py`, `experiments/random_search/formal_100/`.
+- **Completion Criteria:** CSV ledgers (`results.csv`), JSON configs (`config.json`), summaries (`summary.md`), convergence curves, and trade-off scatter plots generated cleanly.
 
-#### Phase 5.4 — Search-Space Characterization
-- **Description:** Analyze the 20-iteration Random Search experimental dataset alongside underlying CMOS circuit and model constraints.
-- **Characterization Metrics:**
-  - Map feasible (valid oscillation) vs. infeasible (`NO_OSCILLATION` / failure) parameter regions.
-  - Analyze trade-off surfaces and trends across $W_n, W_p$, oscillation frequency $f_{osc}$, average power $P_{avg}$, and scalar utility $\mathcal{F}$.
-  - Evaluate whether current temporary development bounds encompass a meaningful, well-behaved feasible region or require expansion/contraction/re-centering.
-- *Constraint:* Final search bounds are **NOT** chosen automatically from the best Random Search point, but through deliberate physical and empirical analysis considering technology constraints, model validity, and simulation feasibility.
-
-#### Phase 5.5 — Final Search-Bound Decision
-- **Description:** Formally decide and freeze the **FINAL** $W_n$ and $W_p$ search bounds for subsequent research optimization experiments.
-- **Decision Criteria:** (1) Technology node & model limits, (2) Valid/meaningful physical simulation region, (3) Empirical Phase 5 search-space characterization evidence.
-- **Action:** Update `SRS.md`, `configs/optimization_config.yaml`, and `README.md` with the finalized bounds, and formally mark **TBD-03 as RESOLVED**.
-- *Constraint:* Until Phase 5.5 is explicitly executed and documented, `TBD-03` remains **UNRESOLVED**.
-
-#### Phase 5 Completion Criteria
-Phase 5 is declared complete **only** when all 7 milestones are satisfied:
-1. Random Search optimizer is implemented.
-2. 5-iteration smoke test passes cleanly.
-3. 20-iteration development run completes successfully with CSV logs.
-4. Structured evaluation data is persisted.
-5. Search-space landscape behavior is fully characterized.
-6. FINAL $W_n/W_p$ search bounds are formally decided and frozen.
-7. `TBD-03` is resolved and documented.
-
-### Phase 6: Bayesian Optimization Engine
-- **Deliverables:** `src/optimization/bayesian.py`, `experiments/run_bayesian_opt.py`.
-- **Methodology Clarification:**
-  - Bayesian Optimization will **NOT** simply search around the single best point discovered during Random Search.
-  - BO models the continuous parameter space by fitting a Gaussian Process (GP) surrogate to observed candidate evaluations: $(W_n, W_p) \to \mathcal{F}$, using an acquisition strategy (e.g. Expected Improvement) to explicitly balance global exploration and local exploitation.
-  - If Phase 5 Random Search observations are used as BO initial training samples ($N_{init}$), this initialization strategy will be explicitly documented.
-  - **Prerequisite:** The final BO campaign must execute strictly within the **FINAL** $W_n/W_p$ search bounds decided and frozen in Phase 5.5.
-
-### Phase 7: Experiment Logging, Persistence & Visualization
-- **Deliverables:** `src/utils/logger.py`, `src/utils/visualizer.py`.
-- **Completion Criteria:** Automated generation of `experiment_log.csv`, `run_summary.json`, and convergence/Pareto comparison curves in `results/plots/`.
-
-### Phase 8: Systematic Comparison & Validation
+### Phase 8: Systematic Method Comparison (PLANNED / NEXT PHASE)
 - **Deliverables:** `experiments/compare_methods.py`.
-- **Fair Comparison Principles:** The comparative benchmark of Bayesian Optimization vs. Random Search must adhere strictly to identical experimental conditions:
-  1. Identical **FINAL** search space bounds $[W_{n,min}, W_{n,max}]$ and $[W_{p,min}, W_{p,max}]$ decided in Phase 5.5.
-  2. Identical objective function formulation ($\mathcal{F} = w_f \frac{f}{f_0} - w_p \frac{P}{P_0}$) and weight profiles (Config B / Config S).
-  3. Identical oscillation validity checks and non-oscillation penalty policies.
-  4. Identical underlying LTspice execution harness and timeout settings.
-  5. Equal and explicit evaluation iteration budgets ($N_{eval}$).
+- **Fair Comparison Principles:**
+  1. Identical frozen search bounds $[0.12, 1.20]\mu\text{m} \times [0.24, 2.80]\mu\text{m}$.
+  2. Identical objective function formulations (Scenario A 0.5/0.5 and Scenario B 0.7/0.3).
+  3. Identical $10\text{ nm}$ DRC grid snapping.
+  4. Identical execution harness, timeout settings, and baseline reference values.
+  5. Identical evaluation budget of 100 physical simulations per campaign.
 
 ### Phase 9: Extended Experiments (PVT Operating Variations - Optional)
 - **Deliverables:** Config-driven sweep over supply voltage $V_{DD}$ ($\pm 10\%$) and temperature ($-40^\circ\text{C}$ to $125^\circ\text{C}$).
-- **Completion Criteria:** Sizing sensitivity under operational variations documented in experiment logs.
 
 ---
 
 ## 17. Verification and Testing Strategy
 
 ### 17.1 Unit Tests (`pytest`)
-- `tests/test_config.py`: Verify missing/corrupted YAML keys trigger informative validation exceptions.
-- `tests/test_parameterizer.py`: Verify candidate $W_n, W_p$ floats are correctly formatted into SPICE engineering notation (e.g. `0.5u`, `180n`).
-- `tests/test_parser.py`: Verify regex parsers accurately extract frequency and power from simulated mock `.log` files (including measurement failure lines).
-- `tests/test_objective.py`: Verify mathematical score calculation, normalization, and penalty handling for corner cases.
-
-### 17.2 Integration Tests
-- `tests/test_ltspice_integration.py`: End-to-end test running a single headless simulation on a minimal inverter/oscillator netlist, confirming process exit code 0 and valid measurement extraction.
+- All 20 unit and integration tests passing cleanly (`pytest tests/`).
 
 ---
 
@@ -581,13 +546,13 @@ The project implementation will be declared complete when:
 3. [x] Python automates batch LTspice execution with robust timeout and process watchdog handling.
 4. [x] Oscillation frequency, power consumption, and propagation delay are parsed reliably.
 5. [x] Objective evaluation handles both valid outputs and failed/non-oscillating circuits.
-6. [ ] Random Search executes over the temporary search space under the unified evaluation contract and search-space characterization completes.
-7. [ ] FINAL $W_n/W_p$ bounds are frozen and TBD-03 resolved.
-8. [ ] Bayesian Optimization executes over the identical final search space with GP surrogate updating.
-9. [ ] All evaluations are tracked in structured CSV and JSON log artifacts.
-10. [ ] Results are reproducible given the same random seed and configuration file.
-11. [ ] A comparison script generates Pareto frontier and convergence curves comparing BO vs. RS.
-12. [ ] Automated test suite (`pytest`) covers configuration, parameterization, and parsing modules.
+6. [x] Random Search campaign (100 physical evaluations, seed 2026) executed and characterized.
+7. [x] FINAL $W_n/W_p$ bounds frozen and TBD-03 resolved.
+8. [ ] Bayesian Optimization executes over the identical final search space with GP surrogate updating (PLANNED).
+9. [x] All evaluations are tracked in structured CSV and JSON log artifacts.
+10. [x] Results are reproducible given the same random seed and configuration file.
+11. [ ] A comparison script generates Pareto frontier and convergence curves comparing BO vs. RS (PLANNED).
+12. [x] Automated test suite (`pytest`) covers configuration, parameterization, and parsing modules.
 
 ---
 
@@ -599,7 +564,7 @@ The following table tracks the formal resolution status of architectural choices
 | :--- | :--- | :--- | :--- |
 | **TBD-01** | **Physical Transistor Technology Node & Models** | **RESOLVED** ($40\text{ nm}$ technology node assumption, $L_n = L_p = 40\text{ nm} = 0.04\mu\text{m}$. Generic Level-1 MOS model active) | Circuit files, length $L$ |
 | **TBD-02** | **Nominal Supply Voltage ($V_{DD}$)** | **RESOLVED** ($V_{DD} = 1.1\text{ V}$ fixed nominal operating voltage) | SPICE netlist & power |
-| **TBD-03** | **Search Space Bounds ($W_{n,min..max}$, $W_{p,min..max}$)** | **UNRESOLVED** (Temporary development bounds $W_n \in [0.18\mu\text{m}, 0.80\mu\text{m}]$, $W_p \in [0.36\mu\text{m}, 1.60\mu\text{m}]$ active; final search bounds will be characterized and decided during Phase 5 Random Search) | Optimizer configuration |
-| **TBD-04** | **Specific Bayesian Optimization Library** | **UNRESOLVED** (`scikit-optimize`, `Optuna`, or `BoTorch`/`GPyOpt`; will be decided after Random Search completion) | `src/optimization/bayesian.py` |
+| **TBD-03** | **Search Space Bounds ($W_{n,min..max}$, $W_{p,min..max}$)** | **RESOLVED** ($W_n \in [0.12\mu\text{m}, 1.20\mu\text{m}]$, $W_p \in [0.24\mu\text{m}, 2.80\mu\text{m}]$, $10\text{ nm}$ grid frozen based on 90 exploratory evaluations) | Optimizer configuration |
+| **TBD-04** | **Specific Bayesian Optimization Library** | **UNRESOLVED / NEXT PHASE** (`scikit-optimize`, `Optuna`, or `BoTorch`/`GPyOpt`; will be selected in upcoming BO phase) | `src/optimization/bayesian.py` |
 | **TBD-06** | **LTspice Installation Path on Target OS** | **RESOLVED** (Configured centrally in repository `configs/optimization_config.yaml`, e.g. `C:\Users\Ahana Banerjee\AppData\Local\Programs\ADI\LTspice\LTspice.exe` on Windows) | Subprocess runner |
 
