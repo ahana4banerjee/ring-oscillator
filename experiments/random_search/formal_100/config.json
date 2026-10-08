@@ -1,0 +1,33 @@
+{
+  "experiment_name": "formal_100_random_search",
+  "timestamp": "2026-10-08T17:11:54.522275+00:00",
+  "seed": 2026,
+  "evaluations": 100,
+  "search_space": {
+    "wn_min_um": 0.12,
+    "wn_max_um": 1.2,
+    "wp_min_um": 0.24,
+    "wp_max_um": 2.8,
+    "step_size_nm": 10.0
+  },
+  "baseline": {
+    "technology": "40nm",
+    "vdd_v": 1.1,
+    "temp_c": 25,
+    "stages": 5,
+    "load_cap_ff": 0.5,
+    "wn_base_um": 0.5,
+    "wp_base_um": 1.0,
+    "f0_ghz": 41.0697566491,
+    "p0_uw": 140.169553568,
+    "tpd0_ps": 2.43488172707,
+    "pdp0_fj": 0.3413,
+    "objective_baseline": 0.0
+  },
+  "objective": {
+    "mode": "weighted",
+    "w_f": 0.5,
+    "w_p": 0.5,
+    "penalty_value": -1000000000.0
+  }
+}
