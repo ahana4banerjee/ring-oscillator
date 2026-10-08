@@ -392,6 +392,24 @@ This document serves as the **chronological engineering journal, decision log, a
 
 ---
 
+### Phase 5 — Second Exploratory Random Search Campaign (30 Boundary Evaluations, N=40 Combined)
+- **Date / Status:** Executed & Verified (Phase 5 Boundary Exploration)
+- **Objective:** Perform a 30-evaluation boundary-exploration Random Search over expanded $W_n \in [0.10, 1.20]\mu\text{m}$ and $W_p \in [0.25, 2.80]\mu\text{m}$ bounds (`seed=123`) to investigate boundary-seeking behavior.
+- **Key Actions Taken:**
+  1. Created `experiments/run_exploratory_random_search_30_boundary.py` executing 30 new evaluations (`seed=123`).
+  2. Saved batch outputs to `experiments/random_search/exploratory_30_boundary/results.csv`.
+  3. Combined Batch 1 (N=10) and Batch 2 (N=30) into a single consolidated dataset of N=40 evaluations (`experiments/random_search/combined_exploratory_40.csv`).
+  4. Authored comprehensive combined research report [RANDOM_SEARCH_BOUNDARY_EXPLORATION_40.md](RANDOM_SEARCH_BOUNDARY_EXPLORATION_40.md).
+- **Empirical Findings Across Combined N=40 Dataset:**
+  - **Oscillation Feasibility:** $40 / 40$ ($100\%$ valid sustained oscillation).
+  - **Highest Frequency:** $89.821\text{ GHz}$ ($+118.71\%$ speed boost vs baseline $41.07\text{ GHz}$) achieved by Batch 2, Iter 3 ($W_n = 1.18\mu\text{m}, W_p = 2.00\mu\text{m}$).
+  - **Lowest Power:** $87.499\mu\text{W}$ ($-37.58\%$ power reduction vs baseline $140.17\mu\text{W}$) achieved by Batch 1, Iter 2 ($W_n = 0.31\mu\text{m}, W_p = 0.63\mu\text{m}$).
+  - **Best Overall Utility Score:** $\mathcal{F} = +0.008816$ achieved by Batch 1, Iter 5 ($W_n = 0.17\mu\text{m}, W_p = 2.34\mu\text{m}$).
+  - **Boundary-Seeking Behavior:** Top 3 utility candidates cluster in the Low $W_n$ ($\le 0.23\mu\text{m}$) / High $W_p$ ($\ge 2.12\mu\text{m}$) region.
+- **Formal Search Space Decision:** OPTION D (Both $W_n$ and $W_p$ exhibit boundary-seeking behavior. Do NOT freeze formal bounds yet. Perform a 50-iteration focused boundary expansion before freezing `TBD-03`).
+
+---
+
 ## Architectural Principles & Decision Log
 
 1. **Separation of Concerns:**
