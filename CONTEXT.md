@@ -354,18 +354,40 @@ This document serves as the **chronological engineering journal, decision log, a
 
 ---
 
+### Phase 0–4 Comprehensive Re-Audit & Baseline Normalization Update (40 nm)
+- **Date / Status:** Executed & Verified (Re-Audit Phases 0–4)
+- **Objective:** Perform a complete, rigorous re-audit of Phases 0–4 against `SRS.md` and the authoritative 40 nm baseline circuit configuration ($L_n=L_p=40\text{ nm}, V_{DD}=1.1\text{V}, C_1..C_5=0.5\text{ fF}, W_{n}=0.5\mu\text{m}, W_{p}=1.0\mu\text{m}$).
+- **Key Actions Taken:**
+  1. Audited actual LTspice baseline circuit (`circuits/baseline/ring_oscillator.asc` and `.net`).
+  2. Verified exact simulation convergence and baseline metrics:
+     - $T_{period} = 2.43488172707 \times 10^{-11}\text{ s}$
+     - $f_0 = 41.0697566491\text{ GHz}$ ($41,069,756,649.1\text{ Hz}$)
+     - $P_0 = 140.169553568\mu\text{W} = 0.000140169553568\text{ W}$
+     - $t_{pd} = 2.43488172707\text{ ps}$
+  3. Identified and remediated all legacy baseline constants ($28.492\text{ GHz}, 141.16\text{ mW}, 1.8\text{V}, 0.18\mu\text{m}, 0.2\text{fF}$) across:
+     - Netlist template `circuits/templates/ring_oscillator.net`
+     - YAML configuration `configs/optimization_config.yaml`
+     - Objective module `src/evaluation/objective.py`
+     - Verification script `scripts/verify_phase4.py`
+     - Test files `tests/test_objective.py` and `tests/test_random_search_integration.py`
+  4. Executed full test suite (`pytest`) to confirm 20/20 test pass rate.
+  5. Formally authored `RE_AUDIT_PHASE_0_4.md` declaring the pipeline READY FOR RANDOM SEARCH (Phase 5).
+
+---
+
 ## Architectural Principles & Decision Log
 
 1. **Separation of Concerns:**
    - Optimization logic (`src/optimization/`) does not execute LTspice directly.
    - Simulation execution (`src/simulation/`) does not calculate objective scores.
    - Objective calculation (`src/evaluation/objective.py`) does not parse raw SPICE files.
-2. **Supply Voltage ($V_{DD}$) Clarification:**
-   - **Current Status:** $V_{DD} = 1.8\text{V}$ is strictly a **temporary development/simulation value**.
-   - **SRS Requirement:** **TBD-02 remains UNRESOLVED**. $1.8\text{V}$ is NOT the final physical supply voltage.
+2. **Supply Voltage ($V_{DD}$) & Technology Node Resolution:**
+   - **TBD-01 RESOLVED:** $40\text{ nm}$ technology node assumption ($L_n = L_p = 40\text{ nm} = 0.04\mu\text{m}$). Generic Level-1 MOS model active.
+   - **TBD-02 RESOLVED:** Nominal supply voltage fixed at $V_{DD} = 1.1\text{ V}$.
+   - **TBD-06 RESOLVED:** LTspice installation path configured in `configs/optimization_config.yaml`.
 3. **Decided vs. Unresolved Scope:**
-   - **Decided (Resolved in SRS):** Objective utility formula ($\mathcal{F} = w_f \frac{f}{f_0} - w_p \frac{P}{P_0}$), weight profiles (Config B / Config S), baseline normalization constants, oscillation validity rule, and TBD-05 removed.
-   - **Unresolved (Kept as TBD):** Transistor technology node (TBD-01), Supply Voltage $V_{DD}$ (TBD-02), Search Space Bounds (TBD-03), Bayesian Optimization Framework (TBD-04), and LTspice Install Path (TBD-06).
+   - **Decided (Resolved in SRS):** Objective utility formula ($\mathcal{F} = w_f \frac{f}{f_0} - w_p \frac{P}{P_0}$), weight profiles (Config B / Config S), baseline normalization constants ($f_0 = 41.0697566491\text{ GHz}, P_0 = 140.169553568\mu\text{W}$), oscillation validity rule, TBD-01, TBD-02, and TBD-06.
+   - **Unresolved (Kept as TBD):** Search Space Bounds (TBD-03: will be characterized/decided during/after Phase 5 Random Search) and Bayesian Optimization Library (TBD-04: will be decided after Random Search completion).
 
 ---
 
