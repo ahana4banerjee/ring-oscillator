@@ -1,0 +1,26 @@
+{
+  "experiment_name": "exploratory_10_random_search",
+  "timestamp": "2026-10-08T16:30:21.184999+00:00",
+  "seed": 42,
+  "search_space": {
+    "wn_min_um": 0.15,
+    "wn_max_um": 1.2,
+    "wp_min_um": 0.3,
+    "wp_max_um": 2.4,
+    "step_size_nm": 10.0
+  },
+  "baseline": {
+    "technology": "40nm",
+    "vdd_v": 1.1,
+    "wn_base_um": 0.5,
+    "wp_base_um": 1.0,
+    "f0_ghz": 41.0697566491,
+    "p0_uw": 140.169553568
+  },
+  "objective": {
+    "mode": "weighted",
+    "w_f": 0.5,
+    "w_p": 0.5,
+    "penalty_value": -1000000000.0
+  }
+}
