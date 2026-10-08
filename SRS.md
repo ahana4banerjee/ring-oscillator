@@ -501,7 +501,7 @@ Phase 5 was executed in two major stages:
    - **Evaluations:** 100 physical LTspice simulations executed independently under seed `2026`.
    - **Feasibility:** 100 / 100 valid oscillating simulations (100.0% feasibility; 99 unique sizing pairs, 1 duplicate).
    - **Best Observed Formal Candidate (Scenario A 0.5/0.5):** Iteration 62 ($W_n = 0.19\mu\text{m}, W_p = 2.66\mu\text{m}$, Ratio = 14.00) yielding $\mathcal{F}_{0.5/0.5} = 0.010923$ ($35.37\text{ GHz}, 117.65\mu\text{W}, 2.83\text{ ps}, 0.3326\text{ fJ}$).
-   - **Scenario B Re-scoring (0.7/0.3):** Obtained by re-scoring the exact same 100 physical simulations without running additional simulations.
+   - **Scenario B Re-scoring (0.7/0.3 COMPLETE):** Obtained by re-scoring the exact same 100 physical simulations without running additional simulations. Yields best observed candidate Iteration 63 ($W_n = 1.08\mu\text{m}, W_p = 2.42\mu\text{m}$, Ratio = 2.24) with score $\mathcal{F}_{0.7/0.3} = 0.909112$ ($\Delta \mathcal{F} = +0.509112$, $93.38\text{ GHz}, 318.90\mu\text{W}, 1.07\text{ ps}, 0.3415\text{ fJ}$).
 
 ### Phase 6: Bayesian Optimization Engine (PLANNED / NEXT PHASE)
 **Status:** **NOT STARTED (PLANNED)**

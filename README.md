@@ -101,7 +101,7 @@ $$\mathcal{F}(W_n, W_p) = w_f \cdot \left(\frac{f_{osc}}{f_0}\right) - w_p \cdot
 | **Exploratory Random Search** | **COMPLETE** | 90 | 3 campaigns (10 + 30 + 50 evals) |
 | **Formal Search Space Bounds Decision** | **FROZEN** | N/A | $W_n \in [0.12, 1.20]\mu\text{m}, W_p \in [0.24, 2.80]\mu\text{m}$ |
 | **Formal Random Search (Scenario A: 0.5/0.5)** | **COMPLETE** | 100 | [RANDOM_SEARCH_FORMAL_100.md](RANDOM_SEARCH_FORMAL_100.md) |
-| **Formal Random Search (Scenario B: 0.7/0.3)** | **READY FOR RE-SCORING** | 0 (Re-scored) | Dataset ready for 0.7/0.3 re-scoring |
+| **Formal Random Search (Scenario B: 0.7/0.3)** | **COMPLETE (Re-scored)** | 0 (Re-scored) | [RANDOM_SEARCH_RESCORING_07_03.md](RANDOM_SEARCH_RESCORING_07_03.md) |
 | **Bayesian Optimization (Experiment A: 0.5/0.5)** | **NOT STARTED** | 100 (Planned) | Planned budget = 100 evaluations |
 | **Bayesian Optimization (Experiment B: 0.7/0.3)** | **NOT STARTED** | 100 (Planned) | Planned budget = 100 evaluations |
 | **Final RS vs BO Comparative Benchmark** | **NOT STARTED** | N/A | Planned after BO completion |

@@ -1,0 +1,25 @@
+{
+  "experiment_name": "formal_100_rescored_07_03",
+  "source_dataset": "experiments/random_search/formal_100/results.csv",
+  "physical_evaluations": 100,
+  "new_simulations": 0,
+  "seed": 2026,
+  "objective_scenarios": {
+    "scenario_a": {
+      "w_f": 0.5,
+      "w_p": 0.5,
+      "baseline_f": 0.0
+    },
+    "scenario_b": {
+      "w_f": 0.7,
+      "w_p": 0.3,
+      "baseline_f": 0.4
+    }
+  },
+  "baseline_constants": {
+    "f0_ghz": 41.0697566491,
+    "p0_uw": 140.169553568,
+    "tpd0_ps": 2.43488172707,
+    "pdp0_fj": 0.3413
+  }
+}

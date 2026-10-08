@@ -396,6 +396,25 @@ This document serves as the **chronological engineering journal, decision log, a
 
 ---
 
+### Phase 5 — Random Search Re-Scoring (Scenario B: 0.7/0.3 Frequency-Priority Objective)
+- **Date / Status:** Executed & Verified (Phase 5 Re-scoring Complete)
+- **Objective:** Re-score the 100 formal physical Random Search evaluations under Scenario B ($w_f = 0.7, w_p = 0.3$) without executing new LTspice simulations.
+- **Key Actions Taken:**
+  1. Created `experiments/run_random_search_rescoring_07_03.py` re-scoring existing 100 physical evaluations offline.
+  2. Exported re-scored dataset and summary to `experiments/random_search/formal_100_rescored_07_03/results.csv` and `summary.md`.
+  3. Created analysis utility `experiments/analyze_rescored_07_03.py` computing convergence trajectory comparisons, top 10 candidate shifts, and rank correlations.
+  4. Generated comparison plots `convergence_comparison_05_vs_07.png` and `wn_vs_wp_scatter_07_03.png`.
+  5. Authored comprehensive research report [RANDOM_SEARCH_RESCORING_07_03.md](RANDOM_SEARCH_RESCORING_07_03.md).
+- **Empirical Findings Across Re-scored 0.7/0.3 Dataset:**
+  - **Physical Simulations Executed:** 100 (0 new simulations; 200 objective evaluations logged across 2 scenarios).
+  - **Best Observed Candidate under 0.7/0.3:** Iteration 63 ($W_n = 1.08\mu\text{m}, W_p = 2.42\mu\text{m}$, Ratio = 2.24) $\implies$ $\mathcal{F}_{0.7/0.3} = \mathbf{0.909112}$ ($\Delta \mathcal{F} = \mathbf{+0.509112}$, $93.38\text{ GHz}, 318.90\mu\text{W}, 1.07\text{ ps}, 0.3415\text{ fJ}$).
+  - **Best 0.5/0.5 Candidate Performance under 0.7/0.3:** Iteration 62 ($0.19\mu\text{m}/2.66\mu\text{m}$) score dropped from Rank 1 under 0.5/0.5 to **Rank 79** under 0.7/0.3 ($\mathcal{F}_{0.7/0.3} = 0.351028$).
+  - **Top 10 Overlap:** **0 / 10 candidates overlap** between Scenario A and Scenario B.
+  - **Design Shift:** Shifting to speed priority ($0.7/0.3$) completely flips optimizer preference from low-power high-ratio candidates ($W_n \approx 0.19\mu\text{m}$, ratio 14.0) to high-speed balanced-ratio candidates ($W_n \approx 1.08-1.20\mu\text{m}$, ratio 1.56-2.80).
+  - **Bayesian Optimization Readiness:** Declared **READY FOR BAYESIAN OPTIMIZATION**.
+
+---
+
 ## Architectural Principles & Decision Log
 
 1. **Separation of Concerns:**
