@@ -74,7 +74,7 @@ def test_random_search_5_iteration_smoke_loop(tmp_path):
 
     best = optimizer.get_best_candidate()
     assert best is not None
-    assert best["candidate"] == {"wn": 0.28e-6, "wp": 0.55e-6}
+    assert best["candidate"] == {"wn": 0.63e-6, "wp": 1.1e-6}
     assert best["status"] == "SUCCESS"
 
     summary_file = logger.write_summary(total_evaluations=5, best_candidate_record=best)

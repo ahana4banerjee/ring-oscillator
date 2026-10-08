@@ -5,9 +5,9 @@ Unit tests for Phase 4: Objective Function & Penalty Engine.
 import pytest
 from src.evaluation.objective import ObjectiveEvaluator
 
-# Normalization constants from Phase 1-3 baseline (Wn=0.5u, Wp=1.0u @ 1.8V)
-BASELINE_FREQ_HZ = 28491793124.8  # 28.492 GHz
-BASELINE_POWER_W = 0.141160332486  # 141.16 mW
+# Normalization constants from 40nm verified baseline (Wn=0.5u, Wp=1.0u @ 1.1V)
+BASELINE_FREQ_HZ = 41069756649.1       # 41.0697566491 GHz
+BASELINE_POWER_W = 0.000140169553568   # 140.169553568 uW
 
 
 def test_baseline_evaluator_balanced():
@@ -23,11 +23,11 @@ def test_baseline_evaluator_balanced():
         "status": "SUCCESS",
         "is_oscillating": True,
         "freq_hz": BASELINE_FREQ_HZ,
-        "freq_ghz": 28.492,
+        "freq_ghz": 41.0697566491,
         "power_w": BASELINE_POWER_W,
-        "power_mw": 141.16,
-        "delay_ps": 3.51,
-        "pdp_j": 4.954e-13
+        "power_mw": 0.140169553568,
+        "delay_ps": 2.434881727,
+        "pdp_j": 3.413e-16
     }
 
     score, feasible, breakdown = evaluator.evaluate(baseline_metrics)
@@ -49,24 +49,23 @@ def test_speed_biased_evaluator():
         objective_mode="weighted"
     )
 
-    # Fast candidate (Candidate 2: 39.773 GHz, 225.5 mW)
-    candidate2_metrics = {
+    candidate_metrics = {
         "status": "SUCCESS",
         "is_oscillating": True,
-        "freq_hz": 39773000000.0,
-        "freq_ghz": 39.773,
-        "power_w": 0.225498,
-        "power_mw": 225.498,
-        "delay_ps": 2.51,
-        "pdp_j": 5.67e-13
+        "freq_hz": 50000000000.0,
+        "freq_ghz": 50.0,
+        "power_w": 0.000200,
+        "power_mw": 0.200,
+        "delay_ps": 2.00,
+        "pdp_j": 4.0e-16
     }
 
-    score, feasible, breakdown = evaluator.evaluate(candidate2_metrics)
+    score, feasible, breakdown = evaluator.evaluate(candidate_metrics)
 
     assert feasible is True
     assert breakdown["penalty_applied"] is False
-    norm_f = 39773000000.0 / BASELINE_FREQ_HZ  # ~ 1.3959
-    norm_p = 0.225498 / BASELINE_POWER_W        # ~ 1.5975
+    norm_f = 50000000000.0 / BASELINE_FREQ_HZ
+    norm_p = 0.000200 / BASELINE_POWER_W
     expected_score = (0.7 * norm_f) - (0.3 * norm_p)
     assert abs(score - expected_score) < 1e-4
 
@@ -79,7 +78,7 @@ def test_penalty_handling_non_oscillating():
         "is_oscillating": False,
         "error_message": "Measurement failed",
         "freq_hz": None,
-        "power_w": 0.10
+        "power_w": 0.0001
     }
 
     score, feasible, breakdown = evaluator.evaluate(failed_metrics)
@@ -95,15 +94,15 @@ def test_pdp_mode():
     metrics = {
         "status": "SUCCESS",
         "is_oscillating": True,
-        "freq_hz": 28.492e9,
-        "power_w": 0.141,
-        "pdp_j": 1e-13
+        "freq_hz": BASELINE_FREQ_HZ,
+        "power_w": BASELINE_POWER_W,
+        "pdp_j": 3.413e-16
     }
 
     score, feasible, breakdown = evaluator.evaluate(metrics)
 
     assert feasible is True
-    assert score == -1e-13
+    assert score == -3.413e-16
 
 
 if __name__ == "__main__":

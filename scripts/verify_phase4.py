@@ -14,9 +14,9 @@ LTSPICE_EXE = r"C:\Users\Ahana Banerjee\AppData\Local\Programs\ADI\LTspice\LTspi
 TEMPLATE_PATH = Path("circuits/templates/ring_oscillator.net")
 OUTPUT_DIR = Path("results/raw/phase4_demo")
 
-# Phase 1-3 Baseline Normalization Constants (Wn=0.5u, Wp=1.0u @ 1.8V)
-BASELINE_FREQ_HZ = 28491793124.8  # 28.492 GHz
-BASELINE_POWER_W = 0.141160332486  # 141.16 mW
+# 40nm Baseline Normalization Constants (Wn=0.5u, Wp=1.0u @ 1.1V)
+BASELINE_FREQ_HZ = 41069756649.1       # 41.0697566491 GHz
+BASELINE_POWER_W = 0.000140169553568   # 140.169553568 uW
 
 
 def main():
@@ -46,9 +46,9 @@ def main():
     )
 
     candidates = [
-        {"name": "Baseline Reference (0.50u / 1.00u)", "Wn": 0.50e-6, "Wp": 1.00e-6, "VDD_VAL": 1.8},
-        {"name": "Candidate 2 - Fast/High-Power (0.80u / 1.60u)", "Wn": 0.80e-6, "Wp": 1.60e-6, "VDD_VAL": 1.8},
-        {"name": "Candidate 3 - Small/Low-Power (0.18u / 0.36u)", "Wn": 0.18e-6, "Wp": 0.36e-6, "VDD_VAL": 1.8},
+        {"name": "Baseline Reference (0.50u / 1.00u)", "Wn": 0.50e-6, "Wp": 1.00e-6, "VDD_VAL": 1.1},
+        {"name": "Candidate 2 - Fast/High-Power (0.80u / 1.60u)", "Wn": 0.80e-6, "Wp": 1.60e-6, "VDD_VAL": 1.1},
+        {"name": "Candidate 3 - Small/Low-Power (0.18u / 0.36u)", "Wn": 0.18e-6, "Wp": 0.36e-6, "VDD_VAL": 1.1},
     ]
 
     print("\nEvaluated Candidates Sizing & Fitness Scoring Summary:")

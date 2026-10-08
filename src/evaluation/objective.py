@@ -13,8 +13,8 @@ class ObjectiveEvaluator:
     """Evaluates multi-metric electrical results into a scalar fitness score."""
 
     def __init__(self,
-                 baseline_freq_hz: float = 28491793124.8,
-                 baseline_power_w: float = 0.141160332486,
+                 baseline_freq_hz: float = 41069756649.1,
+                 baseline_power_w: float = 0.000140169553568,
                  w_f: float = 0.5,
                  w_p: float = 0.5,
                  objective_mode: str = "weighted",

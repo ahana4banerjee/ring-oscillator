@@ -5,16 +5,16 @@ circuit:
   template_netlist: "circuits/templates/ring_oscillator.net"
   models_path: "circuits/models/"
   stages: 5
-  vdd: 1.8                     # Supply Voltage (V)
+  vdd: 1.1                     # Supply Voltage (V)
   nominal_wn: 0.5e-6           # Baseline NMOS width (m)
   nominal_wp: 1.0e-6           # Baseline PMOS width (m)
-  length: 0.18e-6              # Channel length (m)
+  length: 0.04e-6              # Channel length (m)
 
 simulation:
   ltspice_executable: "C:\\Users\\Ahana Banerjee\\AppData\\Local\\Programs\\ADI\\LTspice\\LTspice.exe"
-  transient_stop: "100n"
-  transient_start_save: "20n"
-  max_step: "10p"
+  transient_stop: "1n"
+  transient_start_save: "0.2n"
+  max_step: "0.01p"
   timeout_seconds: 30
 
 search_space:
@@ -25,8 +25,8 @@ search_space:
   step_size: 10e-9             # Grid snapping (10nm)
 
 normalization:
-  baseline_frequency_hz: 28491793124.8  # 28.492 GHz from Phase 1-3 baseline (0.5u/1.0u @ 1.8V)
-  baseline_power_w: 0.141160332486       # 141.16 mW from Phase 1-3 baseline (0.5u/1.0u @ 1.8V)
+  baseline_frequency_hz: 41069756649.1  # 41.0697566491 GHz from 40nm baseline (0.5u/1.0u @ 1.1V)
+  baseline_power_w: 0.000140169553568    # 140.169553568 uW from 40nm baseline (0.5u/1.0u @ 1.1V)
 
 optimization:
   method: "bayesian"           # "bayesian" or "random"
