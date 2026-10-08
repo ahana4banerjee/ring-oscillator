@@ -181,22 +181,26 @@ Step 9: Optimizer queries acquisition function for next candidate until max_iter
 ### 8.1 Circuit Topology
 - **Type:** 5-stage CMOS inverter chain configured in a closed ring.
 - **Number of Inverter Stages ($N_{stages}$):** 5.
-- **Transistor Models:** Predictive Technology Model (PTM) or standard CMOS PDK model (e.g., TSMC 180nm, BSIM4 45nm, or generic CMOS models). *(Exact model file: TBD / Open Decision based on existing baseline setup)*.
-- **Supply Voltage ($V_{DD}$):** Configurable (Nominal: TBD, typical 1.8V for 180nm, 1.2V for 90nm/65nm, or 1.0V for 45nm).
-- **Oscillation Trigger:** Transient initial condition (`.ic V(out1)=0` or pulse initial disturbance) to kick-start oscillation from metastable state.
+- **Technology Node & Transistor Models:** 40 nm CMOS scaling assumption ($L_n = L_p = 40\text{ nm} = 0.04\mu\text{m}$). Generic Level-1 MOS model (`.model NMOS NMOS(LEVEL=1 VTO=0.15 KP=20m)`, `.model PMOS PMOS(LEVEL=1 VTO=-0.15 KP=10m)`) active for fast numerical simulation optimization (**TBD-01 RESOLVED**). *(Note: Level-1 MOS model is a simplified simulation model and is not a calibrated foundry BSIM4 PDK).*
+- **Supply Voltage ($V_{DD}$):** Fixed at $V_{DD} = 1.1\text{ V}$ (**TBD-02 RESOLVED**).
+- **Oscillation Trigger:** Transient initial condition (`.ic V(n002)=0` or `.ic V(OSC)=0`) to kick-start oscillation from metastable state.
 
 ### 8.2 Baseline Parameter Table
 
 | Parameter | Symbol | Nominal Baseline Value | Status |
 | :--- | :--- | :--- | :--- |
 | Number of Stages | $N$ | 5 | **Fixed** |
-| Channel Length | $L_n, L_p$ | `TBD` (e.g. 180nm, 45nm) | Open Decision |
-| Baseline NMOS Width | $W_{n,base}$ | `TBD` | Open Decision |
-| Baseline PMOS Width | $W_{p,base}$ | `TBD` | Open Decision |
-| Supply Voltage | $V_{DD}$ | `TBD` (e.g. 1.8V / 1.2V) | Open Decision |
-| Transient Duration | $t_{stop}$ | `TBD` (e.g. 100ns, sufficient for $\ge 20$ cycles) | Open Decision |
-| Transient Start Save | $t_{start}$ | `TBD` (discard initial transient startup phase) | Open Decision |
-| Max Time Step | $t_{step}$ | `TBD` (e.g. 10ps) | Open Decision |
+| Channel Length | $L_n, L_p$ | $40\text{ nm} = 0.04\mu\text{m}$ | **Resolved (TBD-01)** |
+| Supply Voltage | $V_{DD}$ | $1.1\text{ V}$ | **Resolved (TBD-02)** |
+| Baseline NMOS Width | $W_{n,base}$ | $0.5\mu\text{m}$ | **Fixed Baseline** |
+| Baseline PMOS Width | $W_{p,base}$ | $1.0\mu\text{m}$ | **Fixed Baseline** |
+| Stage Load Capacitances | $C_1 .. C_5$ | $0.5\text{ fF}$ | **Fixed Baseline** |
+| Baseline Frequency | $f_0$ | $41.0697566491\text{ GHz}$ | **Validated Baseline** |
+| Baseline Power | $P_0$ | $140.169553568\mu\text{W}$ | **Validated Baseline** |
+| Stage Propagation Delay | $t_{pd}$ | $2.434881727\text{ ps}$ | **Validated Baseline** |
+| Transient Duration | $t_{stop}$ | $1\text{ ns}$ ($\ge 40$ cycles) | **Fixed** |
+| Transient Start Save | $t_{start}$ | $0.2\text{ ns}$ | **Fixed** |
+| Max Time Step | $t_{step}$ | $0.01\text{ ps}$ | **Fixed** |
 
 ---
 
@@ -269,15 +273,15 @@ The optimization problem seeks to explore the fundamental trade-offs between spe
 
 ### 11.2 Decided Development Objective Function
 
-The decided development objective function is a weighted multi-objective utility formulation normalized against the Phase 1–3 reference baseline:
+The decided development objective function is a weighted multi-objective utility formulation normalized against the verified 40 nm reference baseline:
 
 $$\mathcal{F}(W_n, W_p) = w_f \cdot \left(\frac{f_{osc}}{f_0}\right) - w_p \cdot \left(\frac{P_{avg}}{P_0}\right)$$
 
 Where:
 - $f_{osc}$ = candidate oscillation frequency (Hz)
 - $P_{avg}$ = candidate average power consumption (W)
-- $f_0 = 28,491,793,124.8\text{ Hz}$ ($28.492\text{ GHz}$), validated baseline frequency at $1.8\text{V}$ temporary development $V_{DD}$
-- $P_0 = 0.141160332486\text{ W}$ ($141.16\text{ mW}$), validated baseline power at $1.8\text{V}$ temporary development $V_{DD}$
+- $f_0 = 41,069,756,649.1\text{ Hz}$ ($41.0697566491\text{ GHz}$), validated baseline frequency at $1.1\text{V}$ nominal $V_{DD}$
+- $P_0 = 0.000140169553568\text{ W}$ ($140.169553568\mu\text{W}$), validated baseline power at $1.1\text{V}$ nominal $V_{DD}$
 - $w_f, w_p \ge 0$ are user-specified importance weights satisfying $w_f + w_p = 1.0$
 
 #### Decided Weight Configurations:
@@ -302,7 +306,7 @@ A candidate configuration $[W_n, W_p]$ is classified as a **VALID** oscillating 
 
 Candidates failing any condition above are assigned `status = NO_OSCILLATION` and evaluated using the penalty policy without crashing the optimization process.
 
-*(Note: While the mathematical objective function and validity rule are decided, physical operating parameters such as supply voltage $V_{DD}$ remain open decisions under TBD-02).*
+*(Note: Mathematical objective function, validity rule, and physical operating parameters $V_{DD} = 1.1\text{V}$ and technology node $40\text{nm}$ are resolved under TBD-01 and TBD-02).*
 
 ---
 
@@ -589,13 +593,13 @@ The project implementation will be declared complete when:
 
 ## 19. Open Decisions and TBD Inventory
 
-The following items are deliberately classified as **TBD / Open Decision** pending initial baseline circuit inspection and user confirmation:
+The following table tracks the formal resolution status of architectural choices and TBD inventory items:
 
-| ID | Item Description | Status / Default Assumption | Impact Area |
+| ID | Item Description | Status / Resolution Details | Impact Area |
 | :--- | :--- | :--- | :--- |
-| **TBD-01** | **Physical Transistor Technology Node & Models** | TBD (TSMC 180nm Level 1 models active in baseline netlist) | Circuit files, length $L$ |
-| **TBD-02** | **Nominal Supply Voltage ($V_{DD}$)** | TBD ($V_{DD} = 1.8\text{V}$ used as temporary development value; final VDD unresolved) | SPICE netlist & power |
-| **TBD-03** | **Search Space Bounds ($W_{n,min..max}$, $W_{p,min..max}$)** | **UNRESOLVED** (Temporary development bounds $W_n \in [0.18\mu\text{m}, 0.80\mu\text{m}]$, $W_p \in [0.36\mu\text{m}, 1.60\mu\text{m}]$ active; final bounds will be decided in Phase 5.5 after search-space characterization) | Optimizer configuration |
-| **TBD-04** | **Specific Bayesian Optimization Library** | TBD (`scikit-optimize`, `Optuna`, or `BoTorch`/`GPyOpt`) | `src/optimization/bayesian.py` |
-| **TBD-06** | **LTspice Installation Path on Target OS** | TBD (Configurable via `configs/optimization_config.yaml`) | Subprocess runner |
+| **TBD-01** | **Physical Transistor Technology Node & Models** | **RESOLVED** ($40\text{ nm}$ technology node assumption, $L_n = L_p = 40\text{ nm} = 0.04\mu\text{m}$. Generic Level-1 MOS model active) | Circuit files, length $L$ |
+| **TBD-02** | **Nominal Supply Voltage ($V_{DD}$)** | **RESOLVED** ($V_{DD} = 1.1\text{ V}$ fixed nominal operating voltage) | SPICE netlist & power |
+| **TBD-03** | **Search Space Bounds ($W_{n,min..max}$, $W_{p,min..max}$)** | **UNRESOLVED** (Temporary development bounds $W_n \in [0.18\mu\text{m}, 0.80\mu\text{m}]$, $W_p \in [0.36\mu\text{m}, 1.60\mu\text{m}]$ active; final search bounds will be characterized and decided during Phase 5 Random Search) | Optimizer configuration |
+| **TBD-04** | **Specific Bayesian Optimization Library** | **UNRESOLVED** (`scikit-optimize`, `Optuna`, or `BoTorch`/`GPyOpt`; will be decided after Random Search completion) | `src/optimization/bayesian.py` |
+| **TBD-06** | **LTspice Installation Path on Target OS** | **RESOLVED** (Configured centrally in repository `configs/optimization_config.yaml`, e.g. `C:\Users\Ahana Banerjee\AppData\Local\Programs\ADI\LTspice\LTspice.exe` on Windows) | Subprocess runner |
 
