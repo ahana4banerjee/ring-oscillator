@@ -24,7 +24,7 @@ search_space:
   wn_max: 1.20e-6              # 1.20 um (frozen upper bound)
   wp_min: 0.24e-6              # 0.24 um (frozen lower bound)
   wp_max: 2.80e-6              # 2.80 um (frozen upper bound)
-  step_size: 10e-9             # 10 nm grid resolution
+  step_size: 10.0e-9           # 10 nm grid resolution
 
 normalization:
   baseline_frequency_hz: 41069756649.1  # 41.0697566491 GHz from 40nm baseline (0.5u/1.0u @ 1.1V)
