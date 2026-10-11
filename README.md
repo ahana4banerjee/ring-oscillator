@@ -102,16 +102,26 @@ $$\mathcal{F}(W_n, W_p) = w_f \cdot \left(\frac{f_{osc}}{f_0}\right) - w_p \cdot
 | **Formal Search Space Decision** | **FROZEN** | N/A | N/A | $W_n \in [0.12, 1.20]\mu\text{m}, W_p \in [0.24, 2.80]\mu\text{m}$, 10 nm grid (**TBD-03**) |
 | **Formal RS Scenario A (0.5/0.5)** | **COMPLETE** | 100 | 100 | [RANDOM_SEARCH_FORMAL_100.md](RANDOM_SEARCH_FORMAL_100.md) (Seed 2026) |
 | **Formal RS Scenario B (0.7/0.3)** | **COMPLETE** | **0** (Offline re-scored) | 100 | [RANDOM_SEARCH_RESCORING_07_03.md](RANDOM_SEARCH_RESCORING_07_03.md) |
-| **BO Scenario A (0.5/0.5)** | **METHODOLOGY DEFINED / NOT STARTED** | 50 (Planned) | 50 (Planned) | 10 LHS + 40 adaptive GP/EI |
-| **BO Scenario B (0.7/0.3)** | **METHODOLOGY DEFINED / NOT STARTED** | 50 (Planned) | 50 (Planned) | 10 LHS + 40 adaptive GP/EI |
+| **BO Engine (`src/optimization/bayesian.py`)** | **COMPLETE & VERIFIED** | N/A | N/A | 10/10 unit tests pass (`tests/test_bayesian.py`) |
+| **BO Campaign A (0.5/0.5)** | **PENDING APPROVAL** | 50 (Planned) | 50 (Planned) | 10 LHS + 40 adaptive GP/EI |
+| **BO Campaign B (0.7/0.3)** | **PENDING APPROVAL** | 50 (Planned) | 50 (Planned) | 10 LHS + 40 adaptive GP/EI |
 | **Current Completed Total** | — | **190** (90 exploratory + 100 formal) | **290** | Complete and verified |
 | **Projected Final Total** | — | **290** (190 completed + 100 BO) | **390** | Formal optimization = 200 physical simulations |
 
 ---
 
-## 7. Next Planned Phase: Bayesian Optimization Methodology
+## 7. Bayesian Optimization: Status & Next Step
 
-The upcoming Phase 6 executes **Bayesian Optimization (BO)** across two strictly independent campaigns:
+### 7.1 Current Status: Engine Implemented & Verified
+The Bayesian Optimization Engine (`BayesianOptimizer` in `src/optimization/bayesian.py`) has been implemented and unit verified across 10 test cases (`tests/test_bayesian.py`):
+- Gaussian Process Regression with Matérn 5/2 kernel and ARD lengthscales (`GaussianProcessMatern52`).
+- Space-filling Latin Hypercube Sampling (LHS) for the initial $N_{init} = 10$ candidates.
+- Expected Improvement ($\alpha_{EI}$) acquisition function with exploration parameter $\xi = 0.01$.
+- Discrete $10\text{ nm}$ DRC grid snapping over all 28,013 valid points.
+- Strict duplicate mitigation rejecting previously evaluated coordinates.
+
+### 7.2 Next Pending Step: Campaign Execution (Awaiting Approval)
+- **Step 6.2:** Execute BO Campaign A (Scenario A: Balanced Objective $0.5/0.5$, budget 50 physical evaluations).
 
 ### 7.1 Methodological Design Principles
 1. **Two Independent Objective Campaigns:**

@@ -741,18 +741,18 @@ Phase 5 was executed in two major stages:
    - **Best Observed Formal Candidate (Scenario A 0.5/0.5):** Iteration 62 ($W_n = 0.19\mu\text{m}, W_p = 2.66\mu\text{m}$, Ratio = 14.00) yielding $\mathcal{F}_{0.5/0.5} = 0.010923$ ($35.37\text{ GHz}, 117.65\mu\text{W}, 2.83\text{ ps}, 0.3326\text{ fJ}$).
    - **Scenario B Re-scoring (0.7/0.3 COMPLETE):** Obtained by re-scoring the exact same 100 physical simulations without running additional simulations. Yields best observed candidate Iteration 63 ($W_n = 1.08\mu\text{m}, W_p = 2.42\mu\text{m}$, Ratio = 2.24) with score $\mathcal{F}_{0.7/0.3} = 0.909112$ ($\Delta \mathcal{F} = +0.509112$, $93.38\text{ GHz}, 318.90\mu\text{W}, 1.07\text{ ps}, 0.3415\text{ fJ}$).
 
-### Phase 6: Bayesian Optimization Engine (METHODOLOGY DEFINED / NOT YET EXECUTED)
-**Status:** **METHODOLOGY DEFINED / EXECUTION PENDING**
+### Phase 6: Bayesian Optimization Engine (ENGINE IMPLEMENTED & VERIFIED)
+**Status:** **ENGINE IMPLEMENTED / CAMPAIGN EXECUTION PENDING**
 
-Bayesian Optimization will be executed in the upcoming phase across two strictly independent experimental campaigns:
+The Bayesian Optimization engine module has been formally implemented and unit tested (`src/optimization/bayesian.py`, 10/10 tests passing in `tests/test_bayesian.py`). The optimizer coordinates two strictly independent experimental campaigns to be executed sequentially upon user approval:
 - **BO Experiment A (Balanced Objective 0.5/0.5):** Fixed budget of 50 physical LTspice evaluations (10 initial LHS space-filling + 40 adaptive GP/EI evaluations) over frozen bounds $[0.12, 1.20]\mu\text{m} \times [0.24, 2.80]\mu\text{m}$ on a $10\text{ nm}$ grid.
 - **BO Experiment B (Frequency-Priority Objective 0.7/0.3):** Fixed budget of 50 physical LTspice evaluations (10 initial LHS space-filling + 40 adaptive GP/EI evaluations) over frozen bounds $[0.12, 1.20]\mu\text{m} \times [0.24, 2.80]\mu\text{m}$ on a $10\text{ nm}$ grid.
-- **Key Methodological Principles:**
-  - Gaussian Process surrogate model with Matérn 5/2 covariance kernel, input normalization to $[0, 1]^2$, target standardization, and numerical nugget $\sigma_n^2 \approx 10^{-6}$.
-  - Expected Improvement (EI) acquisition function with exploration parameter $\xi = 0.01$.
-  - Discrete $10\text{ nm}$ grid snapping and duplicate mitigation protocol (no duplicate physical simulations).
-  - Deterministic independent random seeds recorded for reproducibility.
-  - Strict isolation: Random Search 100-evaluation dataset is NOT used for BO initialization.
+- **Key Implementation Highlights:**
+  - `GaussianProcessMatern52`: Gaussian Process surrogate with Matérn 5/2 covariance kernel, ARD lengthscales, $[0, 1]^2$ input normalization, target standardization, and $\sigma_n^2 = 10^{-6}$ numerical nugget.
+  - `BayesianOptimizer`: Expected Improvement ($\alpha_{EI}$) acquisition function with exploration parameter $\xi = 0.01$.
+  - Discrete $10\text{ nm}$ DRC grid snapping over all 28,013 valid candidates with strict duplicate rejection.
+  - Deterministic independent random seeds for full reproducibility.
+  - Strict isolation: Random Search benchmark dataset is NOT used for BO initialization.
 
 ### Phase 7: Experiment Logging, Persistence & Visualization (COMPLETE)
 - **Deliverables:** `experiments/run_formal_random_search_100.py`, `experiments/analyze_formal_100.py`, `experiments/random_search/formal_100/`.
@@ -804,7 +804,7 @@ The project implementation will be declared complete when:
 5. [x] Objective evaluation handles both valid outputs and failed/non-oscillating circuits.
 6. [x] Random Search campaign (100 physical evaluations, seed 2026) executed and characterized.
 7. [x] FINAL $W_n/W_p$ bounds frozen and TBD-03 resolved.
-8. [ ] Bayesian Optimization executes over the identical final search space with GP surrogate updating (METHODOLOGY DEFINED / EXECUTION PENDING).
+8. [ ] Bayesian Optimization executes over the identical final search space with GP surrogate updating (ENGINE IMPLEMENTED & VERIFIED / CAMPAIGN EXECUTION PENDING).
 9. [x] All evaluations are tracked in structured CSV and JSON log artifacts.
 10. [x] Results are reproducible given the same random seed and configuration file.
 11. [ ] A comparison script generates Pareto frontier and convergence curves comparing BO vs. RS (PLANNED).

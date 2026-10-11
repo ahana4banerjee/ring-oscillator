@@ -451,6 +451,40 @@ This document serves as the **chronological engineering journal, decision log, a
 
 ---
 
+### Phase 6 — Step 6.1: Bayesian Optimization Engine Implementation & Unit Verification
+- **Date / Status:** Executed & Verified (Step 6.1 Complete; Campaign Execution Pending)
+- **Objective:** Implement the core Bayesian Optimization algorithmic classes (`src/optimization/bayesian.py`) and write comprehensive unit tests (`tests/test_bayesian.py`) without running physical LTspice simulations.
+- **Key Modules Implemented:**
+  1. `GaussianProcessMatern52`:
+     - Gaussian Process regression surrogate with Matérn 5/2 covariance kernel and ARD lengthscales.
+     - Input feature normalization to $[0, 1]^2$ and target score standardization $(\mu_y, \sigma_y)$.
+     - Numerical nugget $\sigma_n^2 = 10^{-6}$ added to covariance diagonal for Cholesky solver stability.
+     - Maximum Log Marginal Likelihood hyperparameter optimization via L-BFGS-B with random restarts.
+     - Posterior predictive distribution calculation ($\mu_*, \sigma_*$).
+  2. `BayesianOptimizer` (subclass of `BaseOptimizer`):
+     - Discrete $10\text{ nm}$ DRC grid mesh generation ($109 \times 257 = 28,013$ candidate points).
+     - Phase 1: Space-filling Latin Hypercube Sampling (LHS) for the first $N_{init} = 10$ candidates (`scipy.stats.qmc.LatinHypercube`) with deterministic seed.
+     - Phase 2: Expected Improvement ($\alpha_{EI}$) acquisition function with exploration parameter $\xi = 0.01$.
+     - Fast vectorized EI calculation across all 28,013 valid candidate points.
+     - Strict duplicate mitigation: Masking already evaluated candidate coordinates to prevent redundant evaluations.
+     - Evaluation registration, history tracking, and best candidate extraction.
+- **Testing & Verification:**
+  - Created `tests/test_bayesian.py` with 10 unit test cases:
+    * Grid dimension verification (exactly 28,013 points).
+    * Invalid bounds rejection.
+    * Phase 1 LHS schedule properties (uniqueness, bounds, grid snapping).
+    * Deterministic seed reproducibility.
+    * Distinct seed differentiation.
+    * GP Matérn 5/2 fit and predict accuracy on synthetic data.
+    * Expected Improvement calculation across edge cases.
+    * Phase 1 (LHS) to Phase 2 (Adaptive BO) state transition.
+    * Duplicate mitigation enforcement.
+    * Best candidate tracking.
+  - Test suite outcome: **10/10 passed in 3.20s** (`pytest tests/test_bayesian.py`).
+- **Physical Simulations Executed:** 0.
+
+---
+
 ## Architectural Principles & Decision Log
 
 1. **Separation of Concerns:**
