@@ -95,26 +95,59 @@ $$\mathcal{F}(W_n, W_p) = w_f \cdot \left(\frac{f_{osc}}{f_0}\right) - w_p \cdot
 
 ## 6. Current Project Status Ledger
 
-| Phase / Experiment | Status | Physical Evals | Key Output / Artifact |
-| :--- | :--- | :---: | :--- |
-| **Phases 0–4 (Infrastructure & Pipeline)** | **COMPLETE** | N/A | [RE_AUDIT_PHASE_0_4.md](RE_AUDIT_PHASE_0_4.md) (20/20 tests pass) |
-| **Exploratory Random Search** | **COMPLETE** | 90 | 3 campaigns (10 + 30 + 50 evals) |
-| **Formal Search Space Bounds Decision** | **FROZEN** | N/A | $W_n \in [0.12, 1.20]\mu\text{m}, W_p \in [0.24, 2.80]\mu\text{m}$ |
-| **Formal Random Search (Scenario A: 0.5/0.5)** | **COMPLETE** | 100 | [RANDOM_SEARCH_FORMAL_100.md](RANDOM_SEARCH_FORMAL_100.md) |
-| **Formal Random Search (Scenario B: 0.7/0.3)** | **COMPLETE (Re-scored)** | 0 (Re-scored) | [RANDOM_SEARCH_RESCORING_07_03.md](RANDOM_SEARCH_RESCORING_07_03.md) |
-| **Bayesian Optimization (Experiment A: 0.5/0.5)** | **NOT STARTED** | 100 (Planned) | Planned budget = 100 evaluations |
-| **Bayesian Optimization (Experiment B: 0.7/0.3)** | **NOT STARTED** | 100 (Planned) | Planned budget = 100 evaluations |
-| **Final RS vs BO Comparative Benchmark** | **NOT STARTED** | N/A | Planned after BO completion |
+| Phase / Experiment | Status | Physical Evals | Scalar Obj Evals | Key Output / Artifact |
+| :--- | :--- | :---: | :---: | :--- |
+| **Phases 0–4 (Infrastructure & Pipeline)** | **COMPLETE** | N/A | N/A | [RE_AUDIT_PHASE_0_4.md](RE_AUDIT_PHASE_0_4.md) (20/20 tests pass) |
+| **Exploratory Random Search** | **COMPLETE** | 90 | 90 | 3 campaigns (10 pilot + 30 boundary + 50 focused) |
+| **Formal Search Space Decision** | **FROZEN** | N/A | N/A | $W_n \in [0.12, 1.20]\mu\text{m}, W_p \in [0.24, 2.80]\mu\text{m}$, 10 nm grid (**TBD-03**) |
+| **Formal RS Scenario A (0.5/0.5)** | **COMPLETE** | 100 | 100 | [RANDOM_SEARCH_FORMAL_100.md](RANDOM_SEARCH_FORMAL_100.md) (Seed 2026) |
+| **Formal RS Scenario B (0.7/0.3)** | **COMPLETE** | **0** (Offline re-scored) | 100 | [RANDOM_SEARCH_RESCORING_07_03.md](RANDOM_SEARCH_RESCORING_07_03.md) |
+| **BO Scenario A (0.5/0.5)** | **METHODOLOGY DEFINED / NOT STARTED** | 50 (Planned) | 50 (Planned) | 10 LHS + 40 adaptive GP/EI |
+| **BO Scenario B (0.7/0.3)** | **METHODOLOGY DEFINED / NOT STARTED** | 50 (Planned) | 50 (Planned) | 10 LHS + 40 adaptive GP/EI |
+| **Current Completed Total** | — | **190** (90 exploratory + 100 formal) | **290** | Complete and verified |
+| **Projected Final Total** | — | **290** (190 completed + 100 BO) | **390** | Formal optimization = 200 physical simulations |
 
 ---
 
-## 7. Next Planned Phase
+## 7. Next Planned Phase: Bayesian Optimization Methodology
 
-The next experimental phase is **BAYESIAN OPTIMIZATION**:
-1. Implement GP surrogate modeling and Expected Improvement acquisition in Python.
-2. Execute BO Experiment A ($0.5/0.5$, budget 100 physical evaluations) across the frozen bounds $[0.12, 1.20]\mu\text{m} \times [0.24, 2.80]\mu\text{m}$.
-3. Execute BO Experiment B ($0.7/0.3$, budget 100 physical evaluations) across the frozen bounds $[0.12, 1.20]\mu\text{m} \times [0.24, 2.80]\mu\text{m}$.
-4. Perform fair comparative benchmark (RQ1, RQ2, RQ3) comparing BO against the formal Random Search baseline.
+The upcoming Phase 6 executes **Bayesian Optimization (BO)** across two strictly independent campaigns:
+
+### 7.1 Methodological Design Principles
+1. **Two Independent Objective Campaigns:**
+   - **Scenario A (Balanced: 0.5f / 0.5P):** $\mathcal{F}_A = 0.5(f/f_0) - 0.5(P/P_0)$
+   - **Scenario B (Speed-Priority: 0.7f / 0.3P):** $\mathcal{F}_B = 0.7(f/f_0) - 0.3(P/P_0)$
+   - Separate runs with independent evaluation budgets; no solution or surrogate transfer between scenarios.
+2. **Evaluation Budget (50 Evaluations per Scenario):**
+   - **Phase 1 (Initial Design):** $N_{init} = 10$ space-filling Latin Hypercube Sampling (LHS) evaluations with deterministic seeds. *(Note: These 10 points establish the initial GP prior covariance and are NOT Bayesian-guided).*
+   - **Phase 2 (Adaptive BO):** $N_{adaptive} = 40$ sequential iterations guided by surrogate re-fitting and Expected Improvement maximization.
+   - **Total Planned BO Physical Simulations:** 100 LTspice runs (50 Scenario A + 50 Scenario B).
+3. **Strict Isolation from Benchmark Data:**
+   - BO is **NOT** pre-trained or initialized with the 100 Random Search benchmark evaluations. It begins with its own clean budget.
+4. **Surrogate Model & Kernel:**
+   - **Model:** Gaussian Process Regression (GPR).
+   - **Kernel:** Matérn 5/2 covariance kernel with Automatic Relevance Determination (ARD) lengthscales $\ell_{W_n}, \ell_{W_p}$.
+   - **Normalization:** Inputs normalized to $[0, 1]^2$; objective outputs standardized.
+   - **Noise Handling:** Numerical nugget $\sigma_n^2 \approx 10^{-6}$ added to covariance diagonal for Cholesky solver stability.
+   - **Fitting Policy:** Log Marginal Likelihood maximization via L-BFGS-B at each adaptive step.
+5. **Acquisition Function:**
+   - **Expected Improvement (EI):** $\alpha_{EI}(\mathbf{x}) = \mathbb{E}[\max(0, \mathcal{F}(\mathbf{x}) - \mathcal{F}^+ - \xi)]$ with exploration jitter $\xi = 0.01$.
+6. **Search Space & 10 nm Grid Discretization:**
+   - Frozen bounds: $W_n \in [0.12, 1.20]\mu\text{m}$, $W_p \in [0.24, 2.80]\mu\text{m}$ (28,013 valid candidate points).
+   - Unconstrained aspect ratio ($W_n$ and $W_p$ sampled independently; no artificial $W_p=2W_n$ constraints).
+   - Continuous proposals snapped to $10\text{ nm}$ DRC grid.
+   - **Duplicate Mitigation:** Already-evaluated coordinates are rejected by querying the discrete acquisition surface for the next-best unvisited grid candidate.
+7. **Fair Benchmarking Framework:**
+   - **Equal-Budget Comparison (Primary):** Random Search first 50 physical evaluations vs. BO 50 total evaluations.
+   - **Full Random Search Reference:** Random Search 100 physical evaluations vs. BO 50 evaluations.
+   - Convergence tracking: Best-so-far curves compared across evaluations 1 to 50.
+8. **Methodological Limitations & Constraints:**
+   - Results represent empirical findings within a numerical optimization study using a generic Level-1 MOS model at 40 nm, not a silicon-calibrated foundry PDK.
+   - BO provides no mathematical proof of global optimality; all reporting uses "best observed candidate".
+   - Success is defined by rigorous methodology and execution parity, not guaranteed outperformance over Random Search.
+
+### 7.2 Noted Configuration Inconsistency (Documentation Only)
+- In `configs/optimization_config.yaml` lines 21–24, `search_space` currently retains legacy exploratory bounds (`wn_min: 0.18e-6`, `wn_max: 0.80e-6`, `wp_min: 0.36e-6`, `wp_max: 1.60e-6`). When Phase 6 implementation begins, this configuration must be updated to match the frozen formal bounds (`0.12e-6` to `1.20e-6` and `0.24e-6` to `2.80e-6`). No code or configuration changes were executed in this phase.
 
 ---
 

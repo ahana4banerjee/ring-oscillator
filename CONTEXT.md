@@ -415,6 +415,42 @@ This document serves as the **chronological engineering journal, decision log, a
 
 ---
 
+### Phase 6 — Bayesian Optimization Methodology Formalization (DOCUMENTATION / DESIGN ONLY)
+- **Date / Status:** Executed & Documented (Phase 6 Methodology Design Complete; Execution Pending)
+- **Objective:** Establish a formal, mathematically rigorous, reproducible methodology for Bayesian Optimization across two independent objective scenarios prior to code execution.
+- **Key Methodological Decisions Formulated:**
+  1. **Dual Independent Campaigns:**
+     - Scenario A (Balanced $0.5/0.5$): $\mathcal{F}_A = 0.5(f/f_0) - 0.5(P/P_0)$
+     - Scenario B (Frequency-Priority $0.7/0.3$): $\mathcal{F}_B = 0.7(f/f_0) - 0.3(P/P_0)$
+     - Strictly separate optimization runs with independent budgets; no transfer learning or solution seeding across scenarios.
+  2. **Evaluation Budget Partitioning (50 Evaluations per Scenario):**
+     - Phase 1 (Space-Filling Initialization): $N_{init} = 10$ evaluations using Latin Hypercube Sampling (LHS) with deterministic seeds. Explicitly categorized as non-Bayesian prior evaluations.
+     - Phase 2 (Adaptive BO): $N_{adaptive} = 40$ iterations guided by surrogate re-fitting and Expected Improvement maximization.
+     - Total Planned BO Physical Simulations: 100 LTspice simulations (50 Scenario A + 50 Scenario B).
+  3. **Strict Isolation from Benchmark Data:**
+     - The 100 Random Search benchmark evaluations shall **NOT** be fed into the Gaussian Process prior to execution. BO starts from scratch with its own budget.
+  4. **Surrogate Model & Covariance Kernel:**
+     - Gaussian Process Regression (GPR) with Matérn 5/2 kernel and Automatic Relevance Determination (ARD) separate lengthscales.
+     - Inputs normalized to $[0, 1]^2$; target objective values standardized.
+     - Numerical nugget $\sigma_n^2 \approx 10^{-6}$ added along covariance diagonal for Cholesky stability.
+     - Log Marginal Likelihood maximization via L-BFGS-B at each adaptive step.
+  5. **Acquisition Function & Grid Snapping:**
+     - Expected Improvement (EI) with exploration jitter $\xi = 0.01$.
+     - Snapped to discrete $10\text{ nm}$ DRC grid across frozen bounds $[0.12, 1.20]\mu\text{m} \times [0.24, 2.80]\mu\text{m}$ (28,013 valid points).
+     - Duplicate mitigation: Re-evaluating previously evaluated grid coordinates is strictly prohibited; optimizer falls back to next-best unvisited acquisition candidate.
+  6. **Fair Benchmarking Framework:**
+     - Equal-Budget Comparison: Random Search first 50 evaluations vs. BO 50 total evaluations.
+     - Full-Budget Reference: Random Search 100 evaluations vs. BO 50 evaluations.
+     - Continuous best-so-far convergence tracking across evaluations 1 to 50.
+  7. **Simulation Accounting Ledger:**
+     - Completed Physical Simulations: 190 (90 exploratory + 100 formal Random Search).
+     - Planned Physical Simulations: 100 (50 BO Scenario A + 50 BO Scenario B).
+     - Projected Final Total: 290 physical simulations (formal campaign = 200 physical simulations).
+  8. **Code/Config Inconsistencies Documented (No Changes Made):**
+     - Legacy bounds in `configs/optimization_config.yaml` lines 21–24 (`0.18-0.80u`, `0.36-1.60u`) noted for updating to frozen formal bounds (`0.12-1.20u`, `0.24-2.80u`) upon implementation start.
+
+---
+
 ## Architectural Principles & Decision Log
 
 1. **Separation of Concerns:**
@@ -424,10 +460,12 @@ This document serves as the **chronological engineering journal, decision log, a
 2. **Supply Voltage ($V_{DD}$) & Technology Node Resolution:**
    - **TBD-01 RESOLVED:** $40\text{ nm}$ technology node assumption ($L_n = L_p = 40\text{ nm} = 0.04\mu\text{m}$). Generic Level-1 MOS model active.
    - **TBD-02 RESOLVED:** Nominal supply voltage fixed at $V_{DD} = 1.1\text{ V}$.
+   - **TBD-03 RESOLVED:** Formal search bounds frozen at $W_n \in [0.12, 1.20]\mu\text{m}$, $W_p \in [0.24, 2.80]\mu\text{m}$, $10\text{ nm}$ grid.
+   - **TBD-04 RESOLVED IN SPECIFICATION:** Gaussian Process with Matérn 5/2 kernel + Expected Improvement acquisition; budget = 10 LHS + 40 adaptive = 50 physical evaluations per objective scenario.
    - **TBD-06 RESOLVED:** LTspice installation path configured in `configs/optimization_config.yaml`.
 3. **Decided vs. Unresolved Scope:**
-   - **Decided (Resolved in SRS):** Objective utility formula ($\mathcal{F} = w_f \frac{f}{f_0} - w_p \frac{P}{P_0}$), weight profiles (Config B / Config S), baseline normalization constants ($f_0 = 41.0697566491\text{ GHz}, P_0 = 140.169553568\mu\text{W}$), oscillation validity rule, TBD-01, TBD-02, and TBD-06.
-   - **Unresolved (Kept as TBD):** Search Space Bounds (TBD-03: will be characterized/decided during/after Phase 5 Random Search) and Bayesian Optimization Library (TBD-04: will be decided after Random Search completion).
+   - All core architectural parameters (TBD-01, TBD-02, TBD-03, TBD-04, TBD-06) are now formally resolved and specified.
+   - Next execution phase: Implementation and execution of Phase 6 Bayesian Optimization.
 
 ---
 

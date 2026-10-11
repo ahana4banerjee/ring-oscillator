@@ -157,7 +157,7 @@ Step 9: Optimizer queries acquisition function for next candidate until max_iter
 ### 6.5 Objective Evaluation & Optimization
 - **[REQ-OPT-01]** The optimization engine shall provide a uniform interface `suggest() -> dict` and `register(candidate, result) -> None` for both Bayesian Optimization and Random Search.
 - **[REQ-OPT-02]** The optimization loop shall evaluate the design space across $N$ iterations specified by the configuration.
-- **[REQ-OPT-03]** Bayesian Optimization shall initialize with $N_{init}$ random samples before updating the surrogate model and maximizing the acquisition function.
+- **[REQ-OPT-03]** Bayesian Optimization shall initialize with $N_{init} = 10$ space-filling Latin Hypercube Sampling (LHS) candidates prior to adaptive surrogate modeling, followed by 40 adaptive Expected Improvement (EI) evaluations (total budget: 50 physical evaluations per objective scenario).
 
 ### 6.6 Experiment Tracking & Reporting
 - **[REQ-EXP-01]** Every evaluated candidate must be appended to an experiment ledger (`results/processed/experiment_log.csv`) immediately upon evaluation.
@@ -321,12 +321,250 @@ Candidates failing any condition above are assigned `status = NO_OSCILLATION` an
 
 ## 12. Optimization Algorithms
 
-### 12.1 Bayesian Optimization (Primary)
-- **Surrogate Model:** Gaussian Process Regression (GPR) with Matérn 5/2 or RBF covariance kernel.
-- **Acquisition Function:** Expected Improvement (EI), Upper Confidence Bound (UCB), or Probability of Improvement (PI) (Configurable, default: EI).
-- **Exploration/Exploitation Parameter:** $\xi = 0.01$ (for EI) or $\beta = 2.0$ (for UCB).
-- **Initial Design:** Latin Hypercube Sampling (LHS) or Uniform Random Initialization with $N_{init}$ points (default: 5 to 10 points).
-- **Candidate Search:** Quasi-Newton (L-BFGS-B) optimization over the continuous acquisition surface, followed by snapping to manufacturing resolution if applicable.
+### 12.1 Bayesian Optimization (Primary Optimizer)
+
+#### 12.1.1 Purpose & Comparative Research Questions
+Bayesian Optimization (BO) is formulated as the primary sample-efficient surrogate-guided search strategy. Its objective is to determine whether an adaptive surrogate model can discover high-performance transistor sizing configurations using fewer computationally expensive LTspice simulations than unguided Random Search.
+
+The BO experimental framework is specifically designed to answer five fundamental research questions:
+1. **Solution Quality:** Can BO discover a superior candidate (higher scalar objective score $\mathcal{F}$) compared to the Random Search benchmark?
+2. **Sample Efficiency:** How rapidly does BO reach high-utility regions of the design space compared to Random Search?
+3. **Evaluation Budget Required:** How many physical LTspice evaluations does BO require to match or exceed the performance of 50 and 100 Random Search evaluations?
+4. **Objective Sensitivity:** How does the performance and sizing trajectory of BO change when transitioning from a balanced trade-off ($0.5/0.5$) to a frequency-priority ($0.7/0.3$) preference?
+5. **Design Space Exploitation:** Does BO exploit the underlying physical structure of the $W_n/W_p$ landscape (e.g., steep power gradients vs. saturation regions) more effectively than uniform sampling?
+
+> [!IMPORTANT]
+> **Optimality Terminology Constraint:** BO does NOT mathematically guarantee global optimality in black-box non-convex spaces. All findings, metrics, and comparisons must strictly use empirical terms such as **"best observed candidate"**, **"best observed objective score"**, and **"empirical sample efficiency"**, and must **never claim global optimality**.
+
+---
+
+#### 12.1.2 Dual Independent Objective Scenarios
+BO shall be executed independently across the two authoritative objective scenarios established in Section 11.2:
+
+1. **Scenario A — Balanced Objective ($w_f = 0.5, w_p = 0.5$):**
+   $$\mathcal{F}_A(W_n, W_p) = 0.5 \cdot \left(\frac{f_{osc}}{f_0}\right) - 0.5 \cdot \left(\frac{P_{avg}}{P_0}\right)$$
+2. **Scenario B — Frequency-Priority Objective ($w_f = 0.7, w_p = 0.3$):**
+   $$\mathcal{F}_B(W_n, W_p) = 0.7 \cdot \left(\frac{f_{osc}}{f_0}\right) - 0.3 \cdot \left(\frac{P_{avg}}{P_0}\right)$$
+
+**Independence Rule:** These two scenarios are completely separate optimization campaigns. The optimizer must NOT transfer surrogate models, observations, or optimal solutions between Scenario A and Scenario B.
+
+---
+
+#### 12.1.3 Search Space & Discrete 10 nm DRC Grid
+- **Design Space Bounds:** Identical to the frozen formal Random Search bounds (**TBD-03 RESOLVED**):
+  $$W_n \in [0.12\mu\text{m}, 1.20\mu\text{m}], \quad W_p \in [0.24\mu\text{m}, 2.80\mu\text{m}]$$
+- **Discrete Manufacturing Grid:** $10\text{ nm} = 0.01\mu\text{m}$ grid step. The valid candidate coordinate sets are:
+  $$W_n \in \{0.12, 0.13, \dots, 1.20\}\mu\text{m} \quad (109\text{ grid values})$$
+  $$W_p \in \{0.24, 0.25, \dots, 2.80\}\mu\text{m} \quad (257\text{ grid values})$$
+  Total discrete candidates in search space: $109 \times 257 = 28,013\text{ points}$.
+- **Unconstrained Aspect Ratio:** $W_n$ and $W_p$ are treated as independent optimization dimensions. No artificial constraints ($W_p = 2W_n$ or bounded $W_p/W_n$ ratio) are imposed. The rectangular search space is intentional to allow unbiased discovery.
+- **Candidate Discretization & Duplicate Mitigation:**
+  - Continuous candidate proposals generated by maximizing the acquisition function are snapped to the nearest $10\text{ nm}$ grid coordinate:
+    $$W_n = \text{round}(W_n / 10\text{nm}) \times 10\text{nm}, \quad W_p = \text{round}(W_p / 10\text{nm}) \times 10\text{nm}$$
+  - Candidate bounds are clamped: $W_n \in [0.12\mu\text{m}, 1.20\mu\text{m}], W_p \in [0.24\mu\text{m}, 2.80\mu\text{m}]$.
+  - **Duplicate Mitigation Protocol:** Because circuit simulations are deterministic (barring negligible numerical solver noise), re-evaluating an identical $[W_n, W_p]$ point yields no information and wastes simulation budget. If a snapped candidate has already been evaluated, the acquisition ranking across the discrete grid (or acquisition optimization with exclusion) shall select the next highest acquisition candidate not yet evaluated.
+
+---
+
+#### 12.1.4 Strict Isolation from Benchmark Data (No Prior Pre-training)
+The 100 formal Random Search evaluations constitute the external baseline benchmark.
+- **Prohibition of Data Leaks:** BO shall **NOT** be initialized, warm-started, or pre-trained using the 100 Random Search observations.
+- Seeding the surrogate with Random Search points would confound optimization efficiency with prior data availability.
+- BO must start from scratch with its own allocated evaluation budget. The Random Search dataset is reserved strictly for post-hoc comparative analysis.
+
+---
+
+#### 12.1.5 Evaluation Budget & Two-Phase Partitioning
+Each BO objective scenario is allocated a fixed physical simulation budget of **50 LTspice evaluations**:
+
+$$\text{Total BO Budget per Scenario} = 50\text{ physical LTspice evaluations}$$
+
+The budget is partitioned into two distinct methodological phases:
+1. **Phase 1 — Initial Space-Filling Design ($N_{init} = 10$ evaluations):**
+   - 10 quasi-random space-filling candidates generated via Latin Hypercube Sampling (LHS).
+   - *Methodological Classification:* These 10 points are **NOT Bayesian-guided observations**. They serve purely to establish the initial Gaussian Process prior covariance across the 2-D space.
+2. **Phase 2 — Adaptive Bayesian Optimization ($N_{adaptive} = 40$ evaluations):**
+   - 40 sequential iterations guided by surrogate updating and Expected Improvement acquisition maximization.
+   - *Methodological Classification:* These 40 points represent active Bayesian-guided optimization.
+
+**Total Planned BO Physical Simulations:**
+- Scenario A (0.5/0.5): 50 physical simulations (10 LHS + 40 adaptive)
+- Scenario B (0.7/0.3): 50 physical simulations (10 LHS + 40 adaptive)
+- Combined Planned BO Total: **100 physical simulations** (executing independently).
+
+---
+
+#### 12.1.6 Initial Design: Latin Hypercube Sampling (LHS)
+- **Method:** Latin Hypercube Sampling (LHS) over the normalized domain $[0, 1]^2$.
+- **Properties:**
+  - Deterministic and fully reproducible via fixed seed.
+  - Uniform marginal projections ensuring broad space-filling coverage without clustering near the baseline ($0.5\mu\text{m}/1.0\mu\text{m}$).
+  - Fully independent of Random Search sampling locations.
+- **Seed Allocation:**
+  - Scenario A Seed: Distinct deterministic integer recorded in experiment configuration.
+  - Scenario B Seed: Distinct deterministic integer recorded in experiment configuration.
+
+---
+
+#### 12.1.7 Surrogate Model: Gaussian Process Regression (GPR)
+- **Model Type:** Gaussian Process Regression (GPR).
+- **Input Representation:** Candidate vector $\mathbf{x} = [W_n, W_p]^T$ normalized to the unit hypercube $[0, 1]^2$:
+  $$x_1 = \frac{W_n - W_{n,min}}{W_{n,max} - W_{n,min}}, \quad x_2 = \frac{W_p - W_{p,min}}{W_{p,max} - W_{p,min}}$$
+- **Output Representation:** Scalar objective $\mathcal{F}(\mathbf{x})$, standardized to zero mean and unit variance based on current observations.
+- **Covariance Kernel:** Matérn 5/2 kernel with Automatic Relevance Determination (ARD) separate lengthscales:
+  $$k(\mathbf{x}, \mathbf{x}') = \sigma_f^2 \left(1 + \sqrt{5}r + \frac{5}{3}r^2\right) \exp\left(-\sqrt{5}r\right), \quad r = \sqrt{\frac{(x_1 - x'_1)^2}{\ell_1^2} + \frac{(x_2 - x'_2)^2}{\ell_2^2}}$$
+  - *Rationale:* Analog circuit performance exhibits smooth, continuous dependencies on transistor dimensions, but second-order physical transitions (e.g., velocity saturation, subthreshold conduction) violate the infinite differentiability assumption of the Squared Exponential (RBF) kernel. The Matérn 5/2 kernel enforces twice-differentiability ($\mathcal{C}^2$), providing realistic inductive bias without over-smoothing.
+- **Observation Noise / Nugget:** A small constant nugget $\sigma_n^2 \approx 10^{-6}$ (or $10^{-5}$) added along the diagonal of the covariance matrix:
+  $$\mathbf{K}_{noisy} = \mathbf{K} + \sigma_n^2 \mathbf{I}$$
+  - *Rationale:* LTspice transient simulations are deterministic numerical evaluations with tiny floating-point solver tolerances. A small non-zero nugget guarantees numerical positive definiteness and prevents singular matrix inversion during Cholesky decomposition.
+- **Hyperparameter Fitting Policy:** GP hyperparameters (signal variance $\sigma_f^2$, lengthscales $\ell_1, \ell_2$) are re-fitted at every adaptive iteration by maximizing the Log Marginal Likelihood (LML) using L-BFGS-B with multiple random restarts.
+
+---
+
+#### 12.1.8 Acquisition Function: Expected Improvement (EI)
+- **Acquisition Strategy:** Expected Improvement (EI) over the current best observed feasible score $\mathcal{F}^+$:
+  $$\alpha_{EI}(\mathbf{x}) = \mathbb{E}\left[\max(0, \mathcal{F}(\mathbf{x}) - \mathcal{F}^+ - \xi)\right]$$
+- **Analytical Closed Form:**
+  $$\alpha_{EI}(\mathbf{x}) = (\mu(\mathbf{x}) - \mathcal{F}^+ - \xi) \Phi(Z) + \sigma(\mathbf{x}) \phi(Z)$$
+  where:
+  $$Z = \begin{cases} \frac{\mu(\mathbf{x}) - \mathcal{F}^+ - \xi}{\sigma(\mathbf{x})}, & \text{if } \sigma(\mathbf{x}) > 0 \\ 0, & \text{if } \sigma(\mathbf{x}) = 0 \end{cases}$$
+  - $\mu(\mathbf{x})$: Posterior mean prediction of the GP.
+  - $\sigma(\mathbf{x})$: Posterior standard deviation (predictive uncertainty).
+  - $\Phi(\cdot), \phi(\cdot)$: Cumulative distribution and probability density functions of the standard normal distribution $\mathcal{N}(0, 1)$.
+  - $\mathcal{F}^+$: Best observed feasible objective score achieved across all completed evaluations.
+  - $\xi = 0.01$: Exploration jitter parameter controlling the trade-off between global exploration ($\sigma(\mathbf{x})$) and local exploitation ($\mu(\mathbf{x})$).
+
+---
+
+#### 12.1.9 Formal Iterative Bayesian Optimization Execution Loop
+At every step of the optimization campaign, the system executes the following strict 11-step protocol:
+
+```text
+Step 1:  Generate N_init = 10 space-filling candidate sizing pairs via Latin Hypercube Sampling (LHS).
+Step 2:  Snap candidates to the discrete 10 nm DRC grid and clamp within [0.12, 1.20] x [0.24, 2.80] µm.
+Step 3:  Evaluate each initial candidate in LTspice via headless execution harness; extract f_osc, P_avg, t_pd, PDP.
+Step 4:  Calculate target scalar objective score F for all 10 candidates; initialize dataset D_10 = {(x_i, F_i)}_{i=1}^{10}.
+Step 5:  FOR adaptive iteration k = 11 TO 50:
+           a. Normalize inputs x in [0, 1]^2; standardize targets F.
+           b. Fit/re-fit Gaussian Process hyperparameters via Log Marginal Likelihood maximization.
+           c. Optimize acquisition function alpha_EI(x) over [0, 1]^2 using multi-start L-BFGS-B or grid search.
+           d. Snap optimal proposal x* to the discrete 10 nm grid.
+           e. Verify candidate is within bounds and has NOT been previously evaluated (Duplicate Mitigation).
+              If duplicate: select next highest non-evaluated acquisition candidate on the 10 nm grid.
+           f. Update SPICE netlist template with candidate .param Wn=... Wp=...
+           g. Launch batch LTspice simulation with 30-second watchdog timeout.
+           h. Parse .log file, validate oscillation criteria, extract electrical metrics.
+           i. Compute scalar objective F_k (or assign F_penalty = -1e9 if non-oscillating).
+           j. Append new observation (x_k, F_k) to training dataset D_k.
+           k. Update best-so-far record and append iteration telemetry to experiment ledger CSV.
+Step 6:  Record final summary JSON, convergence trajectories, and analytical report.
+```
+
+---
+
+#### 12.1.10 Fair Comparison Framework Against Random Search
+To ensure rigorous, statistically sound benchmarking between Bayesian Optimization and Random Search, the comparison shall be structured as follows:
+
+1. **Equal-Budget Comparison (Primary Efficiency Benchmark):**
+   $$\text{Random Search (First 50 Physical Evaluations)} \quad \text{vs.} \quad \text{Bayesian Optimization (50 Total Physical Evaluations)}$$
+   - Direct sample-for-sample comparison at $N = 50$.
+   - Answers: *Given the exact same simulation budget ($N=50$), does adaptive modeling outperform unguided sampling?*
+2. **Full Random Search Reference Comparison (Asymptotic Quality Benchmark):**
+   $$\text{Random Search (100 Physical Evaluations)} \quad \text{vs.} \quad \text{Bayesian Optimization (50 Total Physical Evaluations)}$$
+   - Evaluates whether BO achieves comparable or superior sizing with **$50\%$ fewer physical evaluations**.
+   - Answers: *Can BO match or beat a $2\times$ larger unguided random search budget?*
+3. **Convergence Curve Tracking:**
+   - Plot best-so-far objective score $\mathcal{F}^*(n) = \max_{i \le n} \mathcal{F}_i$ across evaluation indices $n \in [1, 50]$ for both methods.
+   - Quantify milestone iterations (iterations required to reach 25%, 50%, 75%, 90%, and 100% of final achieved score).
+4. **Standard Candidate Comparison Table:**
+   For each scenario, construct a comparative summary:
+   | Metric | Baseline | RS (50 Evals) | RS (100 Evals) | BO (50 Evals) | BO vs RS (50) $\Delta$ | BO vs RS (100) $\Delta$ |
+   | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+   | $W_n$ ($\mu\text{m}$) | $0.50$ | ... | ... | ... | ... | ... |
+   | $W_p$ ($\mu\text{m}$) | $1.00$ | ... | ... | ... | ... | ... |
+   | $W_p / W_n$ Ratio | $2.00$ | ... | ... | ... | ... | ... |
+   | $f_{osc}$ (GHz) | $41.07$ | ... | ... | ... | ... | ... |
+   | $P_{avg}$ ($\mu\text{W}$) | $140.17$ | ... | ... | ... | ... | ... |
+   | $t_{pd}$ (ps) | $2.43$ | ... | ... | ... | ... | ... |
+   | $\text{PDP}$ (fJ) | $0.3413$ | ... | ... | ... | ... | ... |
+   | Objective Score $\mathcal{F}$ | $0.0000$ | ... | ... | ... | ... | ... |
+   | Discovery Iteration | N/A | ... | ... | ... | ... | ... |
+
+---
+
+#### 12.1.11 Experimental Comparison Architecture Diagram
+
+```text
+                     SCENARIO A (Balanced: 0.5f / 0.5P)
+  Random Search Benchmark                      Bayesian Optimization
+  [100 Physical Evaluations]                   [50 Physical Evaluations]
+              │                                            │
+              ├─────── Equal Budget (First 50 Evals) ──────┤  (RS-50 vs BO-50)
+              │                                            │
+              └─────── Full Budget Benchmark ──────────────┘  (RS-100 vs BO-50)
+
+                     SCENARIO B (Frequency Priority: 0.7f / 0.3P)
+  Random Search Benchmark                      Bayesian Optimization
+  [100 Offline Re-scored]                      [50 Independent Physical Evals]
+  (0 New Physical Simulations)                 (50 New Physical Simulations)
+              │                                            │
+              ├─────── Equal Budget (First 50 Evals) ──────┤  (RS-50 vs BO-50)
+              │                                            │
+              └─────── Full Budget Benchmark ──────────────┘  (RS-100 vs BO-50)
+```
+
+---
+
+#### 12.1.12 Methodological Limitations
+The documentation and analysis of Bayesian Optimization must explicitly acknowledge the following scientific limitations:
+1. **Surrogate Calibration Dependency:** The predictive accuracy of the Gaussian Process depends on the coverage of initial samples. Poor initial coverage may bias early adaptive proposals.
+2. **Deliberately Bounded Budget:** A budget of 50 evaluations is intentionally sample-constrained. While practical for analog simulation, it does not explore asymptotic convergence.
+3. **Stochastic Nature of Realizations:** Although individual runs use deterministic random seeds, optimization trajectories are stochastic realizations. A single seed does not prove universal superiority across all possible random sequences.
+4. **No Global Optimality Guarantee:** Black-box surrogate optimization provides no mathematical proof of global optimality in non-convex multi-modal landscapes.
+5. **Transistor Model Abstraction:** The circuit uses a generic Level-1 MOS model at 40 nm dimensions. It serves as a methodology and numerical optimization study, not a silicon-qualified foundry PDK characterization.
+6. **Discrete Grid Rounding Artifacts:** Snapping continuous proposals to a $10\text{ nm}$ DRC grid alters the exact acquisition argmax location, which can reduce local gradient exploitation near narrow peaks.
+7. **Exploration-Exploitation Balance:** Expected Improvement with fixed $\xi = 0.01$ may tend toward over-exploitation if surrogate predictive variance shrinks too rapidly.
+8. **Handling of Duplicates:** When the acquisition function repeatedly favors an already-evaluated grid coordinate, fallback to sub-optimal acquisition peaks is required.
+9. **Simulation Overhead:** Unlike mathematical test functions, each evaluation incurs SPICE simulation latency (~0.3–0.5s per transient run).
+10. **Objective Weight Sensitivity:** Fixed scalar weights ($0.5/0.5$ and $0.7/0.3$) compress a multi-dimensional Pareto surface into single utility curves; conclusions are specific to these utility formulations.
+
+---
+
+#### 12.1.13 Success & Verification Criteria
+The Phase 6 Bayesian Optimization campaign shall be judged successful if and only if all of the following empirical criteria are satisfied:
+1. **Simulation Budget:** BO completes exactly 50 physical LTspice evaluations per objective scenario (100 physical simulations total across both scenarios).
+2. **Pipeline Invariance:** All evaluations execute through the exact same simulation harness, netlist template, extraction parser, and objective calculator as Random Search.
+3. **Model & Circuit Invariance:** Transistor model, supply voltage ($1.1\text{V}$), channel length ($40\text{nm}$), and load capacitances ($0.5\text{fF}$) remain strictly identical to Random Search.
+4. **Search Space Invariance:** All evaluations remain within the frozen bounds $[0.12, 1.20]\mu\text{m} \times [0.24, 2.80]\mu\text{m}$ on the $10\text{ nm}$ grid.
+5. **Reproducibility:** Experiments execute with recorded deterministic seeds and reproduce identical results when re-run.
+6. **Telemetry Logging:** Detailed convergence history, parameter vectors, metrics, acquisition scores, and timestamps are logged per evaluation.
+7. **Rigorous Equal-Budget Comparison:** BO is systematically benchmarked against the first 50 Random Search evaluations as well as the full 100 evaluations.
+8. **Empirical Reporting:** Best observed candidates are reported with full physical metrics ($W_n, W_p, f_{osc}, P_{avg}, t_{pd}, PDP, \mathcal{F}$).
+9. **Scientific Objectivity:** Success is defined by rigorous methodology and execution parity, **NOT by whether BO outperforms Random Search**. Parity or negative comparative findings are valid and publishable research results.
+
+---
+
+#### 12.1.14 Expected Artifact Structure
+Upon execution, Phase 6 will generate structured artifacts under dedicated scenario directories:
+```text
+experiments/
+└── bayesian_optimization/
+    ├── scenario_05_05/
+    │   ├── results.csv          # 50-row detailed evaluation ledger
+    │   ├── metadata.json        # Configuration, seeds, timing, hyperparameters
+    │   ├── summary.md           # Campaign summary and best candidate findings
+    │   └── plots/
+    │       ├── convergence.png  # Best-so-far curve vs RS-50 and RS-100
+    │       └── design_space.png # Sizing scatter map showing LHS vs Adaptive points
+    │
+    └── scenario_07_03/
+        ├── results.csv          # 50-row detailed evaluation ledger
+        ├── metadata.json        # Configuration, seeds, timing, hyperparameters
+        ├── summary.md           # Campaign summary and best candidate findings
+        └── plots/
+            ├── convergence.png  # Best-so-far curve vs RS-50 and RS-100
+            └── design_space.png # Sizing scatter map showing LHS vs Adaptive points
+```
 
 ### 12.2 Random Search (Baseline)
 - **Sampling Strategy:** Independent and identically distributed (i.i.d.) uniform random sampling across the bounded domain:
@@ -503,15 +741,18 @@ Phase 5 was executed in two major stages:
    - **Best Observed Formal Candidate (Scenario A 0.5/0.5):** Iteration 62 ($W_n = 0.19\mu\text{m}, W_p = 2.66\mu\text{m}$, Ratio = 14.00) yielding $\mathcal{F}_{0.5/0.5} = 0.010923$ ($35.37\text{ GHz}, 117.65\mu\text{W}, 2.83\text{ ps}, 0.3326\text{ fJ}$).
    - **Scenario B Re-scoring (0.7/0.3 COMPLETE):** Obtained by re-scoring the exact same 100 physical simulations without running additional simulations. Yields best observed candidate Iteration 63 ($W_n = 1.08\mu\text{m}, W_p = 2.42\mu\text{m}$, Ratio = 2.24) with score $\mathcal{F}_{0.7/0.3} = 0.909112$ ($\Delta \mathcal{F} = +0.509112$, $93.38\text{ GHz}, 318.90\mu\text{W}, 1.07\text{ ps}, 0.3415\text{ fJ}$).
 
-### Phase 6: Bayesian Optimization Engine (PLANNED / NEXT PHASE)
-**Status:** **NOT STARTED (PLANNED)**
+### Phase 6: Bayesian Optimization Engine (METHODOLOGY DEFINED / NOT YET EXECUTED)
+**Status:** **METHODOLOGY DEFINED / EXECUTION PENDING**
 
-Bayesian Optimization will be executed in the upcoming phase across two independent experimental campaigns:
-- **BO Experiment A (Balanced Objective 0.5/0.5):** Fixed budget of 100 physical LTspice evaluations over frozen bounds $[0.12, 1.20]\mu\text{m} \times [0.24, 2.80]\mu\text{m}$.
-- **BO Experiment B (Frequency-Priority Objective 0.7/0.3):** Fixed budget of 100 physical LTspice evaluations over frozen bounds $[0.12, 1.20]\mu\text{m} \times [0.24, 2.80]\mu\text{m}$.
-- **Methodology Principles:**
-  - BO will fit a Gaussian Process (GP) surrogate $(W_n, W_p) \to \mathcal{F}$ and utilize an acquisition function (e.g., Expected Improvement) to balance exploration and exploitation across the frozen search space.
-  - BO will execute with identical bounds, baseline normalization, grid snapping ($10\text{ nm}$), circuit topology, and simulation harness as Random Search.
+Bayesian Optimization will be executed in the upcoming phase across two strictly independent experimental campaigns:
+- **BO Experiment A (Balanced Objective 0.5/0.5):** Fixed budget of 50 physical LTspice evaluations (10 initial LHS space-filling + 40 adaptive GP/EI evaluations) over frozen bounds $[0.12, 1.20]\mu\text{m} \times [0.24, 2.80]\mu\text{m}$ on a $10\text{ nm}$ grid.
+- **BO Experiment B (Frequency-Priority Objective 0.7/0.3):** Fixed budget of 50 physical LTspice evaluations (10 initial LHS space-filling + 40 adaptive GP/EI evaluations) over frozen bounds $[0.12, 1.20]\mu\text{m} \times [0.24, 2.80]\mu\text{m}$ on a $10\text{ nm}$ grid.
+- **Key Methodological Principles:**
+  - Gaussian Process surrogate model with Matérn 5/2 covariance kernel, input normalization to $[0, 1]^2$, target standardization, and numerical nugget $\sigma_n^2 \approx 10^{-6}$.
+  - Expected Improvement (EI) acquisition function with exploration parameter $\xi = 0.01$.
+  - Discrete $10\text{ nm}$ grid snapping and duplicate mitigation protocol (no duplicate physical simulations).
+  - Deterministic independent random seeds recorded for reproducibility.
+  - Strict isolation: Random Search 100-evaluation dataset is NOT used for BO initialization.
 
 ### Phase 7: Experiment Logging, Persistence & Visualization (COMPLETE)
 - **Deliverables:** `experiments/run_formal_random_search_100.py`, `experiments/analyze_formal_100.py`, `experiments/random_search/formal_100/`.
@@ -523,11 +764,26 @@ Bayesian Optimization will be executed in the upcoming phase across two independ
   1. Identical frozen search bounds $[0.12, 1.20]\mu\text{m} \times [0.24, 2.80]\mu\text{m}$.
   2. Identical objective function formulations (Scenario A 0.5/0.5 and Scenario B 0.7/0.3).
   3. Identical $10\text{ nm}$ DRC grid snapping.
-  4. Identical execution harness, timeout settings, and baseline reference values.
-  5. Identical evaluation budget of 100 physical simulations per campaign.
+  4. Identical execution harness, timeout settings, and baseline reference values ($f_0 = 41.069757\text{ GHz}, P_0 = 140.169554\mu\text{W}$).
+  5. **Equal-Budget Primary Comparison:** First 50 physical evaluations of Random Search vs. 50 total evaluations of Bayesian Optimization.
+  6. **Full-Budget Reference Comparison:** Full 100 physical evaluations of Random Search vs. 50 total evaluations of Bayesian Optimization.
 
 ### Phase 9: Extended Experiments (PVT Operating Variations - Optional)
 - **Deliverables:** Config-driven sweep over supply voltage $V_{DD}$ ($\pm 10\%$) and temperature ($-40^\circ\text{C}$ to $125^\circ\text{C}$).
+
+### Physical Simulation Accounting Ledger
+
+| Campaign / Scenario | Methodology | Status | Physical LTspice Simulations | Scalar Objective Evaluations |
+| :--- | :--- | :--- | :---: | :---: |
+| **Exploratory Random Search** | 3 batches (10 pilot + 30 boundary + 50 focused) | **COMPLETE** | 90 | 90 |
+| **Formal RS Scenario A (0.5/0.5)** | Uniform random sampling (Seed 2026) | **COMPLETE** | 100 | 100 |
+| **Formal RS Scenario B (0.7/0.3)** | Offline re-scoring of formal 100 RS dataset | **COMPLETE** | **0** (Offline re-scored) | 100 |
+| **BO Scenario A (0.5/0.5)** | 10 LHS initial + 40 adaptive GP/EI | **METHODOLOGY DEFINED / NOT STARTED** | 50 (Planned) | 50 (Planned) |
+| **BO Scenario B (0.7/0.3)** | 10 LHS initial + 40 adaptive GP/EI | **METHODOLOGY DEFINED / NOT STARTED** | 50 (Planned) | 50 (Planned) |
+| **Current Completed Total** | — | **CURRENT COMPLETED** | **190** (90 exploratory + 100 formal) | **290** |
+| **Projected Final Total** | — | **PROJECTED TOTAL** | **290** (90 exploratory + 100 formal RS + 100 BO) | **390** |
+
+*(Note: Within the formal optimization campaigns excluding exploratory characterization, physical LTspice simulations currently total exactly 100, and will total 200 upon completion of both 50-evaluation BO campaigns).*
 
 ---
 
@@ -548,7 +804,7 @@ The project implementation will be declared complete when:
 5. [x] Objective evaluation handles both valid outputs and failed/non-oscillating circuits.
 6. [x] Random Search campaign (100 physical evaluations, seed 2026) executed and characterized.
 7. [x] FINAL $W_n/W_p$ bounds frozen and TBD-03 resolved.
-8. [ ] Bayesian Optimization executes over the identical final search space with GP surrogate updating (PLANNED).
+8. [ ] Bayesian Optimization executes over the identical final search space with GP surrogate updating (METHODOLOGY DEFINED / EXECUTION PENDING).
 9. [x] All evaluations are tracked in structured CSV and JSON log artifacts.
 10. [x] Results are reproducible given the same random seed and configuration file.
 11. [ ] A comparison script generates Pareto frontier and convergence curves comparing BO vs. RS (PLANNED).
@@ -565,6 +821,6 @@ The following table tracks the formal resolution status of architectural choices
 | **TBD-01** | **Physical Transistor Technology Node & Models** | **RESOLVED** ($40\text{ nm}$ technology node assumption, $L_n = L_p = 40\text{ nm} = 0.04\mu\text{m}$. Generic Level-1 MOS model active) | Circuit files, length $L$ |
 | **TBD-02** | **Nominal Supply Voltage ($V_{DD}$)** | **RESOLVED** ($V_{DD} = 1.1\text{ V}$ fixed nominal operating voltage) | SPICE netlist & power |
 | **TBD-03** | **Search Space Bounds ($W_{n,min..max}$, $W_{p,min..max}$)** | **RESOLVED** ($W_n \in [0.12\mu\text{m}, 1.20\mu\text{m}]$, $W_p \in [0.24\mu\text{m}, 2.80\mu\text{m}]$, $10\text{ nm}$ grid frozen based on 90 exploratory evaluations) | Optimizer configuration |
-| **TBD-04** | **Specific Bayesian Optimization Library** | **UNRESOLVED / NEXT PHASE** (`scikit-optimize`, `Optuna`, or `BoTorch`/`GPyOpt`; will be selected in upcoming BO phase) | `src/optimization/bayesian.py` |
+| **TBD-04** | **Bayesian Optimization Surrogate & Acquisition Formulation** | **RESOLVED IN SPECIFICATION** (Gaussian Process Regression with Matérn 5/2 kernel, Expected Improvement (EI) acquisition, $N_{init}=10$ LHS initial samples + 40 adaptive evaluations = 50 total evaluations per objective; implementation in Phase 6 using standard GP stack) | `src/optimization/bayesian.py` |
 | **TBD-06** | **LTspice Installation Path on Target OS** | **RESOLVED** (Configured centrally in repository `configs/optimization_config.yaml`, e.g. `C:\Users\Ahana Banerjee\AppData\Local\Programs\ADI\LTspice\LTspice.exe` on Windows) | Subprocess runner |
 
