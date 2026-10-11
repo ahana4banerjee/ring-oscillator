@@ -1,0 +1,39 @@
+{
+  "campaign_id": "bo_scenario_a_2026_physical_20261011_201557",
+  "campaign_name": "bayesian_optimization_scenario_a",
+  "scenario": "scenario_a_balanced_05_05",
+  "timestamp": "2026-10-11T20:18:49.838302+00:00",
+  "is_dry_run": false,
+  "is_synthetic_data": false,
+  "seed": 2026,
+  "total_evaluations": 50,
+  "n_initial_samples_lhs": 10,
+  "n_adaptive_iterations_bo": 40,
+  "search_space": {
+    "wn_min_um": 0.12,
+    "wn_max_um": 1.2,
+    "wp_min_um": 0.24,
+    "wp_max_um": 2.8,
+    "step_size_nm": 10.0,
+    "discrete_candidates_total": 28013
+  },
+  "objective": {
+    "mode": "weighted",
+    "w_f": 0.5,
+    "w_p": 0.5,
+    "penalty_value": -1000000000.0
+  },
+  "surrogate": {
+    "model": "GaussianProcessMatern52",
+    "kernel": "matern52_ard",
+    "nugget": 1e-06,
+    "acquisition": "expected_improvement",
+    "xi_standardized_domain": 0.01
+  },
+  "execution": {
+    "duration_sec": 172.821,
+    "completed_iterations": 50,
+    "feasible_iterations": 49,
+    "oscillating_iterations": 49
+  }
+}
