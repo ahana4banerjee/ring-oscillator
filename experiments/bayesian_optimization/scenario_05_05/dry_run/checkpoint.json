@@ -1,9 +1,9 @@
 {
-  "campaign_id": "bo_scenario_a_2026_dry_run_20261011_185235",
+  "campaign_id": "bo_scenario_a_2026_dry_run_20261011_200306",
   "completed_evaluations": 50,
   "total_budget": 50,
   "is_dry_run": true,
-  "timestamp": "2026-10-11T18:52:53.444220+00:00",
+  "timestamp": "2026-10-11T20:03:33.888939+00:00",
   "best_candidate": {
     "iteration": 41,
     "phase": "ADAPTIVE_BO",
@@ -17,6 +17,7 @@
     "delay": 3.3104,
     "PDP": 0.214091,
     "objective": 0.137069,
+    "is_feasible": true,
     "simulation_status": "SUCCESS",
     "oscillation_status": "VALID",
     "runtime": 0.001,

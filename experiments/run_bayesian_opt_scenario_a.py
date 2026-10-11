@@ -25,6 +25,7 @@ import math
 import os
 import sys
 import time
+import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
@@ -374,24 +375,41 @@ class PhysicalCandidateEvaluator(BaseCandidateEvaluator):
 
 
 def _safe_write_file(target_path: Path, content: str) -> None:
-    """Safely write file with atomic replace and fallback handling for Windows locking (AUD-02, AUD-03)."""
-    tmp_path = target_path.with_suffix(target_path.suffix + ".tmp")
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        f.write(content)
-        f.flush()
-        os.fsync(f.fileno())
+    """
+    Safely write file with atomic replace and retry handling for Windows locking (AUD-02, RE-AUD-04).
+
+    Guarantees:
+    - Never unlinks existing target_path prior to replacement (strictly atomic).
+    - If replacement fails, existing target_path remains preserved and uncorrupted.
+    - Writes to an isolated temporary file with flush and fsync before atomic replace.
+    - Cleans up temporary file in all execution branches.
+    """
+    target_path = Path(target_path)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = target_path.with_name(f"{target_path.name}.tmp_{os.getpid()}_{uuid.uuid4().hex[:8]}")
+
     try:
-        if target_path.exists():
-            try:
-                target_path.unlink()
-            except OSError:
-                pass
-        tmp_path.replace(target_path)
-    except OSError:
-        with open(target_path, "w", encoding="utf-8") as f:
+        with open(tmp_path, "w", encoding="utf-8") as f:
             f.write(content)
             f.flush()
             os.fsync(f.fileno())
+
+        # Atomic replace with retry for Windows transient file locks
+        # Never call target_path.unlink() beforehand (RE-AUD-04)
+        max_retries = 5
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                os.replace(tmp_path, target_path)
+                last_error = None
+                break
+            except OSError as e:
+                last_error = e
+                time.sleep(0.05 * (attempt + 1))
+
+        if last_error is not None:
+            raise last_error
+    finally:
         if tmp_path.exists():
             try:
                 tmp_path.unlink()
@@ -490,7 +508,11 @@ class BayesianOptimizationCampaignRunner:
         mode_tag = "dry_run" if self.dry_run else "physical"
         self.campaign_id = f"bo_scenario_a_{self.seed}_{mode_tag}_{timestamp_str}"
 
-        # 5. Configure & Validate Candidate Evaluator Compatibility (AUD-01)
+        # 5. Configure & Validate Candidate Evaluator Compatibility (AUD-01, RE-AUD-01)
+        if not self.dry_run:
+            # Physical campaign mode: validate physical environment prerequisites unconditionally (RE-AUD-01)
+            self._validate_physical_environment()
+
         if evaluator is not None:
             # Enforce mode compatibility: reject physical evaluator in dry-run, reject mock in physical
             is_phys = getattr(evaluator, "is_physical", False) or isinstance(evaluator, PhysicalCandidateEvaluator)
@@ -504,6 +526,13 @@ class BayesianOptimizationCampaignRunner:
                     "Configuration error: Mock/synthetic evaluator injected into physical campaign mode. "
                     "Physical campaign execution requires an explicit physical evaluator (is_physical=True)."
                 )
+            if not self.dry_run and is_phys and isinstance(evaluator, PhysicalCandidateEvaluator):
+                # Verify that injected PhysicalCandidateEvaluator paths actually exist
+                if not evaluator.template_netlist_path.exists():
+                    raise FileNotFoundError(f"Injected evaluator template netlist not found: {evaluator.template_netlist_path}")
+                if not evaluator.ltspice_executable.exists():
+                    raise FileNotFoundError(f"Injected evaluator LTspice executable not found: {evaluator.ltspice_executable}")
+
             self.evaluator = evaluator
         elif self.dry_run:
             self.evaluator = MockCandidateEvaluator(
@@ -512,8 +541,6 @@ class BayesianOptimizationCampaignRunner:
                 fail_extreme_ratios=True
             )
         else:
-            # Physical mode requested: validate physical environment (AUD-04)
-            self._validate_physical_environment()
             sim_cfg = self.config["simulation"]
             circ_cfg = self.config["circuit"]
             template_path = PROJECT_ROOT / circ_cfg["template_netlist"]
@@ -572,13 +599,26 @@ class BayesianOptimizationCampaignRunner:
         raw_result: Any
     ) -> Dict[str, Any]:
         """
-        Validate and sanitize candidate evaluation output before registration (AUD-07).
-        
+        Validate and sanitize candidate evaluation output before registration (AUD-07, RE-AUD-03).
+
         Enforces:
         - Result is a dictionary with required keys: 'status', 'is_feasible', 'objective_score', 'metrics'.
-        - 'objective_score' is a finite float. If NaN or infinite, coerces to penalty_value.
+        - 'objective_score' is a finite float. If NaN or infinite, coerces to penalty_value and is_feasible=False.
         - Feasibility consistency: If is_feasible is True, status MUST be 'SUCCESS' and metrics['is_oscillating'] MUST be True.
-        - Metrics dictionary completeness: Safely populates missing electrical keys with None.
+        - Comprehensive metric type, finiteness, and positivity validation (RE-AUD-03):
+          If is_feasible is True, electrical metrics ('freq_hz', 'freq_ghz', 'period_s', 'power_w', 'power_mw',
+          'delay_s', 'delay_ps', 'pdp_j') MUST be numeric (int/float, not bool), strictly positive (> 0),
+          and finite (not NaN, not Inf).
+        - Physical consistency constraints (RE-AUD-03):
+          1. Frequency-period reciprocity: |freq_hz * period_s - 1.0| < 1.0e-3
+          2. Frequency unit consistency: |freq_ghz - freq_hz * 1e-9| / freq_ghz < 1.0e-3
+          3. Power unit consistency: |power_mw - power_w * 1e3| / power_mw < 1.0e-3
+          4. Delay-period consistency (5 stages): |delay_s - period_s / 10.0| / delay_s < 1.0e-3
+          5. Delay unit consistency: |delay_ps - delay_s * 1e12| / delay_ps < 1.0e-3
+          6. PDP consistency: |pdp_j - power_w * delay_s| / pdp_j < 1.0e-3
+          If any consistency check fails, coerces is_feasible=False, score=penalty_value, and sets descriptive failure status.
+        - Clean sanitization: Ensures all electrical metric values are strictly either a finite float or None,
+          preventing downstream TypeErrors or string formatting exceptions during record and ledger creation.
         """
         if not isinstance(raw_result, dict):
             return {
@@ -611,36 +651,101 @@ class BayesianOptimizationCampaignRunner:
             is_feasible = False
             status = "MALFORMED_UNPARSEABLE_SCORE"
 
-        metrics = raw_result.get("metrics")
-        if not isinstance(metrics, dict):
-            metrics = {
-                "status": "FAILED",
-                "is_oscillating": False,
-                "freq_hz": None, "freq_ghz": None, "period_s": None,
-                "power_w": None, "power_mw": None, "delay_s": None,
-                "delay_ps": None, "pdp_j": None
-            }
+        raw_metrics = raw_result.get("metrics")
+        if not isinstance(raw_metrics, dict):
+            raw_metrics = {}
             is_feasible = False
             score = self.penalty_value
+            status = "MALFORMED_NON_DICT_METRICS"
 
-        is_oscillating = bool(metrics.get("is_oscillating", False))
+        is_oscillating = bool(raw_metrics.get("is_oscillating", False))
 
-        # Enforce consistency between feasibility and oscillation status
+        # Enforce consistency between feasibility and oscillation/simulation status
         if is_feasible and (status != "SUCCESS" or not is_oscillating):
             is_feasible = False
             score = self.penalty_value
             status = "INCONSISTENT_FEASIBILITY"
 
-        # Ensure canonical electrical keys exist
-        for key in ["freq_ghz", "power_mw", "period_s", "delay_ps", "pdp_j"]:
-            if key not in metrics:
-                metrics[key] = None
+        # Comprehensive metric validation for feasible candidates (RE-AUD-03)
+        req_keys = ["freq_hz", "freq_ghz", "period_s", "power_w", "power_mw", "delay_s", "delay_ps", "pdp_j"]
+        if is_feasible:
+            for k in req_keys:
+                val = raw_metrics.get(k)
+                if val is None or isinstance(val, bool) or not isinstance(val, (int, float)):
+                    is_feasible = False
+                    score = self.penalty_value
+                    status = f"INVALID_METRIC_TYPE: {k}"
+                    break
+                fval = float(val)
+                if math.isnan(fval) or math.isinf(fval) or fval <= 0.0:
+                    is_feasible = False
+                    score = self.penalty_value
+                    status = f"INVALID_METRIC_VALUE: {k}"
+                    break
+
+        # Physical consistency checks (RE-AUD-03)
+        if is_feasible:
+            f_hz = float(raw_metrics["freq_hz"])
+            f_ghz = float(raw_metrics["freq_ghz"])
+            t_s = float(raw_metrics["period_s"])
+            p_w = float(raw_metrics["power_w"])
+            p_mw = float(raw_metrics["power_mw"])
+            d_s = float(raw_metrics["delay_s"])
+            d_ps = float(raw_metrics["delay_ps"])
+            pdp_j = float(raw_metrics["pdp_j"])
+
+            # 1. Frequency vs period reciprocity: f * T = 1
+            if abs(f_hz * t_s - 1.0) > 1.0e-3:
+                is_feasible = False
+                score = self.penalty_value
+                status = "PHYSICAL_INCONSISTENCY: FREQ_PERIOD_MISMATCH"
+            # 2. Frequency unit consistency: f_ghz == f_hz * 1e-9
+            elif abs(f_ghz - f_hz * 1e-9) / max(f_ghz, 1e-9) > 1.0e-3:
+                is_feasible = False
+                score = self.penalty_value
+                status = "PHYSICAL_INCONSISTENCY: FREQ_UNIT_MISMATCH"
+            # 3. Power unit consistency: p_mw == p_w * 1e3
+            elif abs(p_mw - p_w * 1e3) / max(p_mw, 1e-9) > 1.0e-3:
+                is_feasible = False
+                score = self.penalty_value
+                status = "PHYSICAL_INCONSISTENCY: POWER_UNIT_MISMATCH"
+            # 4. Stage delay consistency for 5-stage ring oscillator: t_pd = T / (2 * 5) = T / 10
+            elif abs(d_s - t_s / 10.0) / max(d_s, 1e-15) > 1.0e-3:
+                is_feasible = False
+                score = self.penalty_value
+                status = "PHYSICAL_INCONSISTENCY: DELAY_PERIOD_MISMATCH"
+            # 5. Delay unit consistency: d_ps == d_s * 1e12
+            elif abs(d_ps - d_s * 1e12) / max(d_ps, 1e-15) > 1.0e-3:
+                is_feasible = False
+                score = self.penalty_value
+                status = "PHYSICAL_INCONSISTENCY: DELAY_UNIT_MISMATCH"
+            # 6. PDP consistency: PDP == P_avg * t_pd
+            elif abs(pdp_j - p_w * d_s) / max(pdp_j, 1e-20) > 1.0e-3:
+                is_feasible = False
+                score = self.penalty_value
+                status = "PHYSICAL_INCONSISTENCY: PDP_MISMATCH"
+
+        # Sanitize metrics dictionary so every electrical key is either a finite float or None
+        sanitized_metrics: Dict[str, Any] = {
+            "status": status,
+            "is_oscillating": is_oscillating if not is_feasible else True
+        }
+        for k in req_keys:
+            val = raw_metrics.get(k)
+            if val is not None and not isinstance(val, bool) and isinstance(val, (int, float)):
+                fval = float(val)
+                if not math.isnan(fval) and not math.isinf(fval):
+                    sanitized_metrics[k] = fval
+                else:
+                    sanitized_metrics[k] = None
+            else:
+                sanitized_metrics[k] = None
 
         return {
             "status": status,
             "is_feasible": is_feasible,
             "objective_score": score,
-            "metrics": metrics,
+            "metrics": sanitized_metrics,
             "breakdown": raw_result.get("breakdown", {}),
             "sim_time_sec": float(raw_result.get("sim_time_sec", 0.0)),
             "is_synthetic": bool(raw_result.get("is_synthetic", self.dry_run))
@@ -665,7 +770,7 @@ class BayesianOptimizationCampaignRunner:
         csv_path = self.output_dir / "results.csv"
         csv_fields = [
             "iteration", "phase", "seed", "Wn", "Wp", "ratio", "frequency", "average_power",
-            "period", "delay", "PDP", "objective", "simulation_status", "oscillation_status",
+            "period", "delay", "PDP", "objective", "is_feasible", "simulation_status", "oscillation_status",
             "runtime", "Wn_um", "Wp_um", "Wp_Wn_ratio", "frequency_ghz", "average_power_uw",
             "period_ps", "delay_ps", "pdp_fj", "objective_score", "runtime_sec", "is_synthetic"
         ]
@@ -785,6 +890,7 @@ class BayesianOptimizationCampaignRunner:
                     "delay": round(metrics["delay_ps"], 4) if metrics.get("delay_ps") is not None else None,
                     "PDP": round(metrics["pdp_j"] * 1e15, 6) if metrics.get("pdp_j") is not None else None,
                     "objective": round(score, 6),
+                    "is_feasible": is_feasible,
                     "simulation_status": status,
                     "oscillation_status": "VALID" if is_oscillating else "NO_OSCILLATION",
                     "runtime": round(eval_result.get("sim_time_sec", 0.0), 3),
@@ -804,8 +910,8 @@ class BayesianOptimizationCampaignRunner:
 
                 self.results_records.append(record)
 
-                # Update best feasible candidate
-                if is_feasible and (self.best_candidate is None or score > self.best_candidate["objective_score"]):
+                # Update best feasible candidate (strictly requiring is_feasible and non-penalty score) (RE-AUD-02)
+                if is_feasible and score > -1.0e8 and (self.best_candidate is None or score > self.best_candidate["objective_score"]):
                     self.best_candidate = record
 
                 # 6. Immediate per-iteration persistence (AUD-02)
@@ -829,13 +935,22 @@ class BayesianOptimizationCampaignRunner:
             # Ensure final summary and config are saved even on premature loop exit (AUD-02)
             self._save_final_artifacts(total_duration)
 
-        valid_records = [r for r in self.results_records if r["oscillation_status"] == "VALID"]
-        best_cand = max(valid_records, key=lambda x: x["objective_score"]) if valid_records else None
+        # Strictly disentangle feasible from oscillating records (RE-AUD-02)
+        feasible_records = [
+            r for r in self.results_records
+            if r.get("is_feasible", False) is True and r.get("objective_score", -float("inf")) > -1.0e8
+        ]
+        oscillating_records = [
+            r for r in self.results_records
+            if r.get("oscillation_status") == "VALID"
+        ]
+        best_cand = max(feasible_records, key=lambda x: x["objective_score"]) if feasible_records else None
 
         return {
             "campaign_id": self.campaign_id,
             "total_evaluations": len(self.results_records),
-            "feasible_evaluations": len(valid_records),
+            "feasible_evaluations": len(feasible_records),
+            "oscillating_evaluations": len(oscillating_records),
             "best_candidate": best_cand,
             "duration_sec": total_duration,
             "is_dry_run": self.dry_run,
@@ -843,9 +958,16 @@ class BayesianOptimizationCampaignRunner:
         }
 
     def _save_final_artifacts(self, total_duration: float) -> None:
-        """Write config.json and summary.md artifacts atomically (AUD-02, AUD-03)."""
-        valid_records = [r for r in self.results_records if r["oscillation_status"] == "VALID"]
-        best_cand = max(valid_records, key=lambda x: x["objective_score"]) if valid_records else None
+        """Write config.json and summary.md artifacts atomically (AUD-02, AUD-03, RE-AUD-02)."""
+        feasible_records = [
+            r for r in self.results_records
+            if r.get("is_feasible", False) is True and r.get("objective_score", -float("inf")) > -1.0e8
+        ]
+        oscillating_records = [
+            r for r in self.results_records
+            if r.get("oscillation_status") == "VALID"
+        ]
+        best_cand = max(feasible_records, key=lambda x: x["objective_score"]) if feasible_records else None
 
         # 1. config.json
         config_payload = {
@@ -883,7 +1005,8 @@ class BayesianOptimizationCampaignRunner:
             "execution": {
                 "duration_sec": round(total_duration, 3),
                 "completed_iterations": len(self.results_records),
-                "feasible_iterations": len(valid_records)
+                "feasible_iterations": len(feasible_records),
+                "oscillating_iterations": len(oscillating_records)
             }
         }
         cfg_final = self.output_dir / "config.json"
@@ -900,7 +1023,8 @@ class BayesianOptimizationCampaignRunner:
 - **Total Evaluations:** {len(self.results_records)} / {self.total_evaluations}
 - **Initial LHS Design:** {min(len(self.results_records), self.n_initial_samples)} evaluations
 - **Adaptive BO Iterations:** {max(0, len(self.results_records) - self.n_initial_samples)} evaluations
-- **Feasible / Valid Simulations:** {len(valid_records)} / {max(len(self.results_records), 1)} ({len(valid_records)/max(len(self.results_records),1)*100:.1f}%)
+- **Feasible Evaluations:** {len(feasible_records)} / {max(len(self.results_records), 1)} ({len(feasible_records)/max(len(self.results_records),1)*100:.1f}%)
+- **Oscillating Evaluations:** {len(oscillating_records)} / {max(len(self.results_records), 1)} ({len(oscillating_records)/max(len(self.results_records),1)*100:.1f}%)
 - **Deterministic Seed:** {self.seed}
 - **Total Duration:** {total_duration:.2f} s
 - **Acquisition Policy:** Expected Improvement (xi = 0.01 in standardized objective domain)

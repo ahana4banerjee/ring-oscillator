@@ -4,14 +4,15 @@
 > **THIS IS A DRY-RUN VALIDATION DATASET GENERATED USING A DETERMINISTIC SYNTHETIC EVALUATOR.**
 > Zero LTspice simulations were executed. Physical simulation execution remains pending separate authorization.
 
-- **Campaign ID:** `bo_scenario_a_2026_dry_run_20261011_185235`
+- **Campaign ID:** `bo_scenario_a_2026_dry_run_20261011_200306`
 - **Campaign Mode:** DRY-RUN (SYNTHETIC EVALUATOR)
 - **Total Evaluations:** 50 / 50
 - **Initial LHS Design:** 10 evaluations
 - **Adaptive BO Iterations:** 40 evaluations
-- **Feasible / Valid Simulations:** 48 / 50 (96.0%)
+- **Feasible Evaluations:** 48 / 50 (96.0%)
+- **Oscillating Evaluations:** 48 / 50 (96.0%)
 - **Deterministic Seed:** 2026
-- **Total Duration:** 18.02 s
+- **Total Duration:** 27.78 s
 - **Acquisition Policy:** Expected Improvement (xi = 0.01 in standardized objective domain)
 - **Search Space:** Wn in [0.12, 1.20] µm, Wp in [0.24, 2.80] µm (10 nm grid, 28,013 valid points)
 
