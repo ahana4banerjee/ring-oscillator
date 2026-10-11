@@ -1,0 +1,39 @@
+{
+  "campaign_id": "bo_scenario_a_2026_dry_run_20261011_185235",
+  "completed_evaluations": 50,
+  "total_budget": 50,
+  "is_dry_run": true,
+  "timestamp": "2026-10-11T18:52:53.444220+00:00",
+  "best_candidate": {
+    "iteration": 41,
+    "phase": "ADAPTIVE_BO",
+    "seed": 2026,
+    "Wn": 0.22,
+    "Wp": 0.28,
+    "ratio": 1.2727,
+    "frequency": 30.207729,
+    "average_power": 64.672,
+    "period": 33.1041,
+    "delay": 3.3104,
+    "PDP": 0.214091,
+    "objective": 0.137069,
+    "simulation_status": "SUCCESS",
+    "oscillation_status": "VALID",
+    "runtime": 0.001,
+    "Wn_um": 0.22,
+    "Wp_um": 0.28,
+    "Wp_Wn_ratio": 1.2727,
+    "frequency_ghz": 30.207729,
+    "average_power_uw": 64.672,
+    "period_ps": 33.1041,
+    "delay_ps": 3.3104,
+    "pdp_fj": 0.214091,
+    "objective_score": 0.137069,
+    "runtime_sec": 0.001,
+    "is_synthetic": true
+  },
+  "last_candidate": {
+    "wn": 6.7e-07,
+    "wp": 7.7e-07
+  }
+}

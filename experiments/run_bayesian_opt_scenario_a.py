@@ -9,7 +9,11 @@ Executes or dry-runs the 50-evaluation Bayesian Optimization campaign for Scenar
   - Model: Gaussian Process Regression with Matérn 5/2 kernel and ARD lengthscales
   - Acquisition: Expected Improvement (xi = 0.01 in standardized objective domain)
   - Duplicate Mitigation: Strict discrete grid exclusion
-  - Dry-Run Mode: Synthetic evaluation with zero LTspice/subprocess/netlist interactions.
+  - Evaluator Isolation: Explicit mode compatibility check (AUD-01)
+  - Atomic Checkpointing: Per-iteration flush, checkpoint state, exception recovery (AUD-02)
+  - Output Protection: Overwrite prevention and unique campaign identification (AUD-03)
+  - Result Validation: Strict sanity checks before optimizer registration (AUD-07)
+  - Configuration Validation: Complete frozen specification verification (AUD-06)
 
 Master Source of Truth: SRS.md (Section 12 & Section 13)
 """
@@ -17,6 +21,8 @@ Master Source of Truth: SRS.md (Section 12 & Section 13)
 import argparse
 import csv
 import json
+import math
+import os
 import sys
 import time
 from abc import ABC, abstractmethod
@@ -42,7 +48,7 @@ from src.evaluation.extractor import MetricExtractor
 
 
 # ==============================================================================
-# Configuration Loading & Validation
+# Configuration Loading & Comprehensive Validation (AUD-06)
 # ==============================================================================
 
 def load_and_validate_bo_config(
@@ -52,9 +58,18 @@ def load_and_validate_bo_config(
     """
     Load and strictly validate the dedicated Bayesian Optimization configuration.
     
+    Verifies every campaign-critical and frozen parameter:
+      - Search space bounds and DRC grid step
+      - 5-stage ring oscillator circuit architecture and nominal parameters
+      - Headless LTspice simulation tolerances and timeout
+      - Normalization constants
+      - Budget partitioning (10 LHS + 40 Adaptive BO = 50 evaluations)
+      - Scenario A weights (w_f=0.5, w_p=0.5) and seed (2026)
+      - Penalty value (-1.0e9) and GPR/EI settings
+      
     Args:
         config_path: Path to configuration YAML file.
-        scenario_key: Target scenario key ("scenario_a" or "scenario_b").
+        scenario_key: Target scenario key ("scenario_a").
         
     Returns:
         Validated configuration dictionary.
@@ -77,11 +92,43 @@ def load_and_validate_bo_config(
     if "search_space" not in config:
         raise ValueError("Missing 'search_space' section in configuration.")
     for k in ["wn_min", "wn_max", "wp_min", "wp_max", "step_size"]:
-        if k in config["search_space"]:
-            config["search_space"][k] = float(config["search_space"][k])
+        if k not in config["search_space"]:
+            raise ValueError(f"Missing required search_space key '{k}'.")
+        config["search_space"][k] = float(config["search_space"][k])
     validate_frozen_bounds(config["search_space"])
 
-    # 2. Validate optimization parameters
+    # 2. Validate circuit specifications (AUD-06)
+    circ_cfg = config.get("circuit", {})
+    if int(circ_cfg.get("stages", 0)) != 5:
+        raise ValueError(f"Circuit stages must be exactly 5, got {circ_cfg.get('stages')}")
+    if abs(float(circ_cfg.get("vdd", 0.0)) - 1.1) > 1e-12:
+        raise ValueError(f"Supply voltage VDD must be 1.1 V, got {circ_cfg.get('vdd')}")
+    if abs(float(circ_cfg.get("length", 0.0)) - 0.04e-6) > 1e-12:
+        raise ValueError(f"Channel length must be 0.04 µm (40 nm), got {circ_cfg.get('length')}")
+    if abs(float(circ_cfg.get("nominal_wn", 0.0)) - 0.5e-6) > 1e-12:
+        raise ValueError(f"Nominal Wn must be 0.5 µm, got {circ_cfg.get('nominal_wn')}")
+    if abs(float(circ_cfg.get("nominal_wp", 0.0)) - 1.0e-6) > 1e-12:
+        raise ValueError(f"Nominal Wp must be 1.0 µm, got {circ_cfg.get('nominal_wp')}")
+
+    template_rel = circ_cfg.get("template_netlist", "")
+    if not template_rel:
+        raise ValueError("Missing 'template_netlist' path in circuit configuration.")
+    template_path = PROJECT_ROOT / template_rel
+    if not template_path.exists():
+        raise FileNotFoundError(f"Template netlist not found at: {template_path}")
+
+    # 3. Validate simulation specifications (AUD-06)
+    sim_cfg = config.get("simulation", {})
+    if sim_cfg.get("transient_stop") != "1n":
+        raise ValueError(f"Simulation transient_stop must be '1n', got {sim_cfg.get('transient_stop')}")
+    if sim_cfg.get("transient_start_save") != "0.2n":
+        raise ValueError(f"Simulation transient_start_save must be '0.2n', got {sim_cfg.get('transient_start_save')}")
+    if sim_cfg.get("max_step") != "0.01p":
+        raise ValueError(f"Simulation max_step must be '0.01p', got {sim_cfg.get('max_step')}")
+    if float(sim_cfg.get("timeout_seconds", 0.0)) <= 0:
+        raise ValueError(f"Simulation timeout_seconds must be positive, got {sim_cfg.get('timeout_seconds')}")
+
+    # 4. Validate optimization parameters
     opt_cfg = config.get("optimization", {})
     if opt_cfg.get("method") != "bayesian":
         raise ValueError(f"Expected optimization method 'bayesian', got '{opt_cfg.get('method')}'")
@@ -95,8 +142,10 @@ def load_and_validate_bo_config(
         raise ValueError(f"Expected acquisition 'expected_improvement', got '{opt_cfg.get('acquisition')}'")
     if abs(float(opt_cfg.get("xi", 0.0)) - 0.01) > 1e-12:
         raise ValueError(f"Expected xi 0.01, got {opt_cfg.get('xi')}")
+    if abs(float(opt_cfg.get("penalty_value", 0.0)) - (-1.0e9)) > 1e-3:
+        raise ValueError(f"Expected penalty_value -1.0e9, got {opt_cfg.get('penalty_value')}")
 
-    # 3. Validate budget partitioning
+    # 5. Validate budget partitioning
     total_evals = int(opt_cfg.get("total_evaluations", 0))
     n_init = int(opt_cfg.get("n_initial_samples", 0))
     n_adaptive = int(opt_cfg.get("n_adaptive_iterations", 0))
@@ -110,13 +159,15 @@ def load_and_validate_bo_config(
     if n_init + n_adaptive != total_evals:
         raise ValueError(f"Sum of initial ({n_init}) and adaptive ({n_adaptive}) must equal total ({total_evals})")
 
-    # 4. Validate Scenario A specifics
+    # 6. Validate Scenario A specifics
     scenarios = opt_cfg.get("scenarios", {})
     if scenario_key not in scenarios:
         raise ValueError(f"Target scenario '{scenario_key}' not defined in configuration.")
 
     sc_cfg = scenarios[scenario_key]
     if scenario_key == "scenario_a":
+        if sc_cfg.get("name") != "balanced":
+            raise ValueError(f"Scenario A name must be 'balanced', got '{sc_cfg.get('name')}'")
         if abs(float(sc_cfg.get("w_f", 0.0)) - 0.5) > 1e-12 or abs(float(sc_cfg.get("w_p", 0.0)) - 0.5) > 1e-12:
             raise ValueError(f"Scenario A requires w_f=0.5 and w_p=0.5, got w_f={sc_cfg.get('w_f')}, w_p={sc_cfg.get('w_p')}")
 
@@ -125,7 +176,7 @@ def load_and_validate_bo_config(
         if seed_a != 2026:
             raise ValueError(f"Scenario A deterministic seed must be 2026, got {seed_a}")
 
-    # 5. Validate normalization baselines
+    # 7. Validate normalization baselines
     norm_cfg = config.get("normalization", {})
     f0 = float(norm_cfg.get("baseline_frequency_hz", 0.0))
     p0 = float(norm_cfg.get("baseline_power_w", 0.0))
@@ -138,11 +189,17 @@ def load_and_validate_bo_config(
 
 
 # ==============================================================================
-# Evaluator Interfaces (Dependency Injection for Strict Dry-Run Isolation)
+# Evaluator Interfaces (Dependency Injection & Strict Mode Lockdown - AUD-01)
 # ==============================================================================
 
 class BaseCandidateEvaluator(ABC):
     """Abstract interface for candidate sizing evaluation."""
+
+    @property
+    @abstractmethod
+    def is_physical(self) -> bool:
+        """Return True if this evaluator executes physical circuit simulation, False if synthetic/mock."""
+        pass
 
     @abstractmethod
     def evaluate(self, candidate: Dict[str, float], iteration_idx: int) -> Dict[str, Any]:
@@ -166,6 +223,10 @@ class MockCandidateEvaluator(BaseCandidateEvaluator):
     Computes deterministic synthetic electrical measurements without invoking LTspice,
     launching subprocesses, writing netlist files, or consuming physical evaluations.
     """
+
+    @property
+    def is_physical(self) -> bool:
+        return False
 
     def __init__(
         self,
@@ -209,12 +270,9 @@ class MockCandidateEvaluator(BaseCandidateEvaluator):
             }
         else:
             # Deterministic analytical surrogate proxy for Level-1 5-stage ring oscillator:
-            # - Frequency scales with effective drive conductance Wn*Wp/(Wn+Wp) and inversely with total W
-            # - Power scales with frequency and total capacitive load (dynamic power cv^2*f)
             wn_um = wn * 1e6
             wp_um = wp * 1e6
             
-            # Smooth physical approximation centered near nominal baseline (0.5u/1.0u -> 41.07 GHz, 140.2 uW)
             drive_eff = (wn_um * wp_um) / (wn_um + 0.5 * wp_um + 0.1)
             cap_eff = 0.5 + 0.8 * (wn_um + wp_um)
             freq_ghz = 25.0 + 35.0 * (drive_eff / cap_eff)
@@ -223,7 +281,6 @@ class MockCandidateEvaluator(BaseCandidateEvaluator):
             period_s = 1.0 / freq_hz
             delay_ps = (period_s / 10.0) * 1e12  # 5 stages -> 10 transitions per cycle
 
-            # Dynamic capacitive switching power
             power_uw = 40.0 + (cap_eff * 1.5) * (freq_ghz / 40.0) * (1.1 ** 2) * 20.0
             power_w = power_uw * 1e-6
             power_mw = power_uw / 1000.0
@@ -243,7 +300,7 @@ class MockCandidateEvaluator(BaseCandidateEvaluator):
                 "pdp_j": pdp_j
             }
 
-        # Evaluate scalar objective utility using authoritative ObjectiveEvaluator
+        # Evaluate scalar objective utility using ObjectiveEvaluator
         score, is_feasible, breakdown = self.objective_evaluator.evaluate(metrics)
 
         return {
@@ -264,6 +321,10 @@ class PhysicalCandidateEvaluator(BaseCandidateEvaluator):
     Coordinates NetlistParameterizer, LTspiceRunner, MetricExtractor, and ObjectiveEvaluator.
     NEVER invoked during dry-run validation.
     """
+
+    @property
+    def is_physical(self) -> bool:
+        return True
 
     def __init__(
         self,
@@ -312,6 +373,32 @@ class PhysicalCandidateEvaluator(BaseCandidateEvaluator):
         }
 
 
+def _safe_write_file(target_path: Path, content: str) -> None:
+    """Safely write file with atomic replace and fallback handling for Windows locking (AUD-02, AUD-03)."""
+    tmp_path = target_path.with_suffix(target_path.suffix + ".tmp")
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        f.write(content)
+        f.flush()
+        os.fsync(f.fileno())
+    try:
+        if target_path.exists():
+            try:
+                target_path.unlink()
+            except OSError:
+                pass
+        tmp_path.replace(target_path)
+    except OSError:
+        with open(target_path, "w", encoding="utf-8") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+
+
 # ==============================================================================
 # Bayesian Optimization Campaign Runner
 # ==============================================================================
@@ -321,7 +408,7 @@ class BayesianOptimizationCampaignRunner:
     Coordinates execution of Bayesian Optimization Campaign (Scenario A / Balanced).
     
     Enforces the frozen 50-evaluation budget (10 LHS + 40 adaptive BO), strict grid alignment,
-    duplicate mitigation, conditioned penalty tracking, and atomic result logging.
+    duplicate mitigation, conditioned penalty tracking, atomic checkpointing, and output protection.
     """
 
     def __init__(
@@ -330,7 +417,8 @@ class BayesianOptimizationCampaignRunner:
         scenario_key: str = "scenario_a",
         dry_run: bool = True,
         output_dir: Optional[Union[str, Path]] = None,
-        evaluator: Optional[BaseCandidateEvaluator] = None
+        evaluator: Optional[BaseCandidateEvaluator] = None,
+        overwrite: bool = False
     ):
         """
         Args:
@@ -340,11 +428,13 @@ class BayesianOptimizationCampaignRunner:
             output_dir: Custom output directory. Defaults to experiments/bayesian_optimization/scenario_05_05/
                         (or a /dry_run subdirectory if dry_run=True).
             evaluator: Optional custom evaluator instance (dependency injection).
+            overwrite: If False, refuses to run if target output directory already contains artifacts (AUD-03).
         """
         self.dry_run = dry_run
         self.scenario_key = scenario_key
+        self.overwrite = overwrite
 
-        # 1. Load and validate configuration
+        # 1. Load and strictly validate configuration (AUD-06)
         self.config = load_and_validate_bo_config(config_path, scenario_key=scenario_key)
         self.search_space = self.config["search_space"]
         self.opt_cfg = self.config["optimization"]
@@ -379,12 +469,14 @@ class BayesianOptimizationCampaignRunner:
             enforce_frozen_bounds=True
         )
 
-        # 4. Resolve Output Directory
+        # 4. Resolve Output Directory & Overwrite Protection (AUD-03)
         if output_dir is not None:
             self.output_dir = Path(output_dir)
         else:
             base_dir = PROJECT_ROOT / self.config["logging"]["scenario_a_dir"]
             self.output_dir = base_dir / "dry_run" if self.dry_run else base_dir
+
+        self._check_output_directory_safeguards()
 
         self.plots_dir = self.output_dir / "plots"
         self.raw_dir = self.output_dir / "raw_results"
@@ -393,8 +485,25 @@ class BayesianOptimizationCampaignRunner:
         if not self.dry_run:
             self.raw_dir.mkdir(parents=True, exist_ok=True)
 
-        # 5. Configure Candidate Evaluator
+        # Unique Campaign Identifier for Auditability (AUD-03)
+        timestamp_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        mode_tag = "dry_run" if self.dry_run else "physical"
+        self.campaign_id = f"bo_scenario_a_{self.seed}_{mode_tag}_{timestamp_str}"
+
+        # 5. Configure & Validate Candidate Evaluator Compatibility (AUD-01)
         if evaluator is not None:
+            # Enforce mode compatibility: reject physical evaluator in dry-run, reject mock in physical
+            is_phys = getattr(evaluator, "is_physical", False) or isinstance(evaluator, PhysicalCandidateEvaluator)
+            if self.dry_run and is_phys:
+                raise ValueError(
+                    "Security violation: Physical evaluator injected into dry-run mode. "
+                    "Dry-run mode requires an isolated synthetic evaluator (is_physical=False)."
+                )
+            if not self.dry_run and not is_phys:
+                raise ValueError(
+                    "Configuration error: Mock/synthetic evaluator injected into physical campaign mode. "
+                    "Physical campaign execution requires an explicit physical evaluator (is_physical=True)."
+                )
             self.evaluator = evaluator
         elif self.dry_run:
             self.evaluator = MockCandidateEvaluator(
@@ -403,6 +512,8 @@ class BayesianOptimizationCampaignRunner:
                 fail_extreme_ratios=True
             )
         else:
+            # Physical mode requested: validate physical environment (AUD-04)
+            self._validate_physical_environment()
             sim_cfg = self.config["simulation"]
             circ_cfg = self.config["circuit"]
             template_path = PROJECT_ROOT / circ_cfg["template_netlist"]
@@ -420,10 +531,162 @@ class BayesianOptimizationCampaignRunner:
         # Evaluation telemetry tracking
         self.results_records: List[Dict[str, Any]] = []
         self.evaluated_candidates: Set[Tuple[float, float]] = set()
+        self.best_candidate: Optional[Dict[str, Any]] = None
+
+    def _check_output_directory_safeguards(self) -> None:
+        """Prevent accidental overwriting of completed/partial campaigns (AUD-03)."""
+        critical_artifacts = [
+            self.output_dir / "results.csv",
+            self.output_dir / "config.json",
+            self.output_dir / "summary.md",
+            self.output_dir / "checkpoint.json"
+        ]
+        if not self.overwrite and any(p.exists() for p in critical_artifacts):
+            existing_files = [p.name for p in critical_artifacts if p.exists()]
+            raise FileExistsError(
+                f"Output directory '{self.output_dir}' already contains campaign artifacts: {existing_files}. "
+                "Refusing to overwrite without explicit overwrite=True (or --overwrite flag). "
+                "Specify an empty directory or explicitly authorize replacement."
+            )
+
+    def _validate_physical_environment(self) -> None:
+        """Validate prerequisites before executing physical simulation campaign (AUD-04)."""
+        sim_cfg = self.config.get("simulation", {})
+        circ_cfg = self.config.get("circuit", {})
+
+        template_path = PROJECT_ROOT / circ_cfg.get("template_netlist", "")
+        if not template_path.exists():
+            raise FileNotFoundError(f"Template netlist not found: {template_path}")
+
+        ltspice_exe = Path(sim_cfg.get("ltspice_executable", ""))
+        if not ltspice_exe.exists():
+            raise FileNotFoundError(f"LTspice executable not found: {ltspice_exe}")
+
+        models_dir = PROJECT_ROOT / circ_cfg.get("models_path", "")
+        if not models_dir.exists():
+            raise FileNotFoundError(f"Transistor models directory not found: {models_dir}")
+
+    def _validate_and_sanitize_result(
+        self,
+        candidate: Dict[str, float],
+        raw_result: Any
+    ) -> Dict[str, Any]:
+        """
+        Validate and sanitize candidate evaluation output before registration (AUD-07).
+        
+        Enforces:
+        - Result is a dictionary with required keys: 'status', 'is_feasible', 'objective_score', 'metrics'.
+        - 'objective_score' is a finite float. If NaN or infinite, coerces to penalty_value.
+        - Feasibility consistency: If is_feasible is True, status MUST be 'SUCCESS' and metrics['is_oscillating'] MUST be True.
+        - Metrics dictionary completeness: Safely populates missing electrical keys with None.
+        """
+        if not isinstance(raw_result, dict):
+            return {
+                "status": "MALFORMED_NON_DICT_RESULT",
+                "is_feasible": False,
+                "objective_score": self.penalty_value,
+                "metrics": {
+                    "status": "FAILED",
+                    "is_oscillating": False,
+                    "freq_hz": None, "freq_ghz": None, "period_s": None,
+                    "power_w": None, "power_mw": None, "delay_s": None,
+                    "delay_ps": None, "pdp_j": None
+                },
+                "breakdown": {"error": f"Evaluator returned non-dict type: {type(raw_result)}"},
+                "sim_time_sec": 0.0,
+                "is_synthetic": self.dry_run
+            }
+
+        status = str(raw_result.get("status", "FAILED"))
+        is_feasible = bool(raw_result.get("is_feasible", False))
+
+        try:
+            score = float(raw_result.get("objective_score", self.penalty_value))
+            if math.isnan(score) or math.isinf(score):
+                score = self.penalty_value
+                is_feasible = False
+                status = "MALFORMED_NON_FINITE_SCORE"
+        except (ValueError, TypeError):
+            score = self.penalty_value
+            is_feasible = False
+            status = "MALFORMED_UNPARSEABLE_SCORE"
+
+        metrics = raw_result.get("metrics")
+        if not isinstance(metrics, dict):
+            metrics = {
+                "status": "FAILED",
+                "is_oscillating": False,
+                "freq_hz": None, "freq_ghz": None, "period_s": None,
+                "power_w": None, "power_mw": None, "delay_s": None,
+                "delay_ps": None, "pdp_j": None
+            }
+            is_feasible = False
+            score = self.penalty_value
+
+        is_oscillating = bool(metrics.get("is_oscillating", False))
+
+        # Enforce consistency between feasibility and oscillation status
+        if is_feasible and (status != "SUCCESS" or not is_oscillating):
+            is_feasible = False
+            score = self.penalty_value
+            status = "INCONSISTENT_FEASIBILITY"
+
+        # Ensure canonical electrical keys exist
+        for key in ["freq_ghz", "power_mw", "period_s", "delay_ps", "pdp_j"]:
+            if key not in metrics:
+                metrics[key] = None
+
+        return {
+            "status": status,
+            "is_feasible": is_feasible,
+            "objective_score": score,
+            "metrics": metrics,
+            "breakdown": raw_result.get("breakdown", {}),
+            "sim_time_sec": float(raw_result.get("sim_time_sec", 0.0)),
+            "is_synthetic": bool(raw_result.get("is_synthetic", self.dry_run))
+        }
+
+    def _write_checkpoint(self, iter_idx: int, last_candidate: Dict[str, float]) -> None:
+        """Atomically persist campaign state checkpoint after every iteration (AUD-02)."""
+        checkpoint_payload = {
+            "campaign_id": self.campaign_id,
+            "completed_evaluations": iter_idx + 1,
+            "total_budget": self.total_evaluations,
+            "is_dry_run": self.dry_run,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "best_candidate": self.best_candidate,
+            "last_candidate": last_candidate
+        }
+        final_path = self.output_dir / "checkpoint.json"
+        _safe_write_file(final_path, json.dumps(checkpoint_payload, indent=2))
+
+    def _append_record_to_csv(self, record: Dict[str, Any], is_first: bool = False) -> None:
+        """Atomically append a completed evaluation record to results.csv (AUD-02)."""
+        csv_path = self.output_dir / "results.csv"
+        csv_fields = [
+            "iteration", "phase", "seed", "Wn", "Wp", "ratio", "frequency", "average_power",
+            "period", "delay", "PDP", "objective", "simulation_status", "oscillation_status",
+            "runtime", "Wn_um", "Wp_um", "Wp_Wn_ratio", "frequency_ghz", "average_power_uw",
+            "period_ps", "delay_ps", "pdp_fj", "objective_score", "runtime_sec", "is_synthetic"
+        ]
+        mode = "w" if is_first else "a"
+        with open(csv_path, mode, newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=csv_fields)
+            if is_first:
+                writer.writeheader()
+            writer.writerow(record)
+            f.flush()
+            os.fsync(f.fileno())
 
     def run(self) -> Dict[str, Any]:
         """
         Execute the Bayesian Optimization campaign.
+        
+        Guarantees:
+        - Per-iteration atomic checkpointing to results.csv and checkpoint.json (AUD-02).
+        - Exception handling preventing campaign data loss on simulator crash (AUD-02).
+        - Sanitized result registration and best-candidate tracking (AUD-07).
+        - Strict budget capping at exactly 50 physical evaluations without retries.
         
         Returns:
             Dictionary containing campaign summary statistics and artifacts metadata.
@@ -431,6 +694,7 @@ class BayesianOptimizationCampaignRunner:
         mode_str = "DRY-RUN (SYNTHETIC)" if self.dry_run else "PHYSICAL SIMULATION"
         print("=" * 80)
         print(f"STARTING BAYESIAN OPTIMIZATION CAMPAIGN — SCENARIO A ({mode_str})")
+        print(f"  Campaign ID: {self.campaign_id}")
         print(f"  Objective: Balanced (w_f = {self.w_f}, w_p = {self.w_p})")
         print(f"  Frozen Search Space: Wn in [{self.search_space['wn_min']*1e6:.2f}, {self.search_space['wn_max']*1e6:.2f}] µm | "
               f"Wp in [{self.search_space['wp_min']*1e6:.2f}, {self.search_space['wp_max']*1e6:.2f}] µm")
@@ -441,102 +705,135 @@ class BayesianOptimizationCampaignRunner:
         print("=" * 80)
 
         start_time_all = time.time()
+        csv_initialized = False
 
-        for iter_idx in range(self.total_evaluations):
-            # Budget safeguard
-            if len(self.optimizer.history) >= self.total_evaluations:
-                print(f"Evaluation budget limit ({self.total_evaluations}) reached. Stopping.")
-                break
+        try:
+            for iter_idx in range(self.total_evaluations):
+                # Budget safeguard
+                if len(self.optimizer.history) >= self.total_evaluations:
+                    print(f"Evaluation budget limit ({self.total_evaluations}) reached. Stopping.")
+                    break
 
-            # 1. Propose candidate
-            candidate = self.optimizer.suggest()
-            wn = float(candidate["wn"])
-            wp = float(candidate["wp"])
-            coord = (round(wn, 12), round(wp, 12))
+                # 1. Propose candidate
+                candidate = self.optimizer.suggest()
+                wn = float(candidate["wn"])
+                wp = float(candidate["wp"])
+                coord = (round(wn, 12), round(wp, 12))
 
-            # 2. Strict candidate validation (grid, bounds, uniqueness)
-            step_nm = self.search_space["step_size"] * 1e9
-            wn_nm = round(wn * 1e9, 4)
-            wp_nm = round(wp * 1e9, 4)
-            if abs(wn_nm % step_nm) > 1e-4 or abs(wp_nm % step_nm) > 1e-4:
-                raise ValueError(f"Candidate {coord} is not snapped to {step_nm} nm grid.")
+                # 2. Strict candidate validation (grid, bounds, uniqueness)
+                step_nm = self.search_space["step_size"] * 1e9
+                wn_nm = round(wn * 1e9, 4)
+                wp_nm = round(wp * 1e9, 4)
+                if abs(wn_nm % step_nm) > 1e-4 or abs(wp_nm % step_nm) > 1e-4:
+                    raise ValueError(f"Candidate {coord} is not snapped to {step_nm} nm grid.")
 
-            if wn < self.search_space["wn_min"] - 1e-12 or wn > self.search_space["wn_max"] + 1e-12:
-                raise ValueError(f"Candidate Wn={wn} exceeds bounds [{self.search_space['wn_min']}, {self.search_space['wn_max']}].")
-            if wp < self.search_space["wp_min"] - 1e-12 or wp > self.search_space["wp_max"] + 1e-12:
-                raise ValueError(f"Candidate Wp={wp} exceeds bounds [{self.search_space['wp_min']}, {self.search_space['wp_max']}].")
+                if wn < self.search_space["wn_min"] - 1e-12 or wn > self.search_space["wn_max"] + 1e-12:
+                    raise ValueError(f"Candidate Wn={wn} exceeds bounds [{self.search_space['wn_min']}, {self.search_space['wn_max']}].")
+                if wp < self.search_space["wp_min"] - 1e-12 or wp > self.search_space["wp_max"] + 1e-12:
+                    raise ValueError(f"Candidate Wp={wp} exceeds bounds [{self.search_space['wp_min']}, {self.search_space['wp_max']}].")
 
-            if coord in self.evaluated_candidates:
-                raise RuntimeError(f"Duplicate candidate proposed: {coord}. Duplicate mitigation failed.")
+                if coord in self.evaluated_candidates:
+                    raise RuntimeError(f"Duplicate candidate proposed: {coord}. Duplicate mitigation failed.")
 
-            self.evaluated_candidates.add(coord)
+                self.evaluated_candidates.add(coord)
 
-            # 3. Evaluate candidate via injected evaluator
-            eval_result = self.evaluator.evaluate(candidate, iteration_idx=iter_idx)
+                # 3. Evaluate candidate with exception recovery (AUD-02)
+                try:
+                    raw_result = self.evaluator.evaluate(candidate, iteration_idx=iter_idx)
+                    eval_result = self._validate_and_sanitize_result(candidate, raw_result)
+                except Exception as exc:
+                    # Capture evaluation failure without aborting campaign or losing prior records
+                    eval_result = {
+                        "status": f"EVALUATOR_EXCEPTION: {type(exc).__name__}",
+                        "is_feasible": False,
+                        "objective_score": self.penalty_value,
+                        "metrics": {
+                            "status": "FAILED",
+                            "is_oscillating": False,
+                            "error": str(exc),
+                            "freq_hz": None, "freq_ghz": None, "period_s": None,
+                            "power_w": None, "power_mw": None, "delay_s": None,
+                            "delay_ps": None, "pdp_j": None
+                        },
+                        "breakdown": {"error": str(exc)},
+                        "sim_time_sec": 0.0,
+                        "is_synthetic": self.dry_run
+                    }
 
-            # 4. Register result with Bayesian Optimizer (refits GP during adaptive phase)
-            self.optimizer.register(candidate, eval_result)
+                # 4. Register result with Bayesian Optimizer (refits GP during adaptive phase)
+                self.optimizer.register(candidate, eval_result)
 
-            # 5. Extract metrics and record telemetry
-            metrics = eval_result["metrics"]
-            score = float(eval_result["objective_score"])
-            status = eval_result["status"]
-            is_oscillating = bool(metrics.get("is_oscillating", False))
-            phase = "LHS" if iter_idx < self.n_initial_samples else "ADAPTIVE_BO"
-            ratio = wp / wn
+                # 5. Extract metrics and record telemetry
+                metrics = eval_result["metrics"]
+                score = float(eval_result["objective_score"])
+                status = eval_result["status"]
+                is_oscillating = bool(metrics.get("is_oscillating", False))
+                is_feasible = bool(eval_result["is_feasible"])
+                phase = "LHS" if iter_idx < self.n_initial_samples else "ADAPTIVE_BO"
+                ratio = wp / wn
 
-            record = {
-                "iteration": iter_idx + 1,  # 1-indexed (1..50)
-                "phase": phase,
-                "seed": self.seed,
-                "Wn": round(wn * 1e6, 4),
-                "Wp": round(wp * 1e6, 4),
-                "ratio": round(ratio, 4),
-                "frequency": round(metrics["freq_ghz"], 6) if metrics.get("freq_ghz") is not None else None,
-                "average_power": round(metrics["power_mw"] * 1000, 3) if metrics.get("power_mw") is not None else None,
-                "period": round(metrics["period_s"] * 1e12, 4) if metrics.get("period_s") is not None else None,
-                "delay": round(metrics["delay_ps"], 4) if metrics.get("delay_ps") is not None else None,
-                "PDP": round(metrics["pdp_j"] * 1e15, 6) if metrics.get("pdp_j") is not None else None,
-                "objective": round(score, 6),
-                "simulation_status": status,
-                "oscillation_status": "VALID" if is_oscillating else "NO_OSCILLATION",
-                "runtime": round(eval_result.get("sim_time_sec", 0.0), 3),
-                # Canonical detailed fields
-                "Wn_um": round(wn * 1e6, 4),
-                "Wp_um": round(wp * 1e6, 4),
-                "Wp_Wn_ratio": round(ratio, 4),
-                "frequency_ghz": round(metrics["freq_ghz"], 6) if metrics.get("freq_ghz") is not None else None,
-                "average_power_uw": round(metrics["power_mw"] * 1000, 3) if metrics.get("power_mw") is not None else None,
-                "period_ps": round(metrics["period_s"] * 1e12, 4) if metrics.get("period_s") is not None else None,
-                "delay_ps": round(metrics["delay_ps"], 4) if metrics.get("delay_ps") is not None else None,
-                "pdp_fj": round(metrics["pdp_j"] * 1e15, 6) if metrics.get("pdp_j") is not None else None,
-                "objective_score": round(score, 6),
-                "runtime_sec": round(eval_result.get("sim_time_sec", 0.0), 3),
-                "is_synthetic": self.dry_run
-            }
+                record = {
+                    "iteration": iter_idx + 1,  # 1-indexed (1..50)
+                    "phase": phase,
+                    "seed": self.seed,
+                    "Wn": round(wn * 1e6, 4),
+                    "Wp": round(wp * 1e6, 4),
+                    "ratio": round(ratio, 4),
+                    "frequency": round(metrics["freq_ghz"], 6) if metrics.get("freq_ghz") is not None else None,
+                    "average_power": round(metrics["power_mw"] * 1000, 3) if metrics.get("power_mw") is not None else None,
+                    "period": round(metrics["period_s"] * 1e12, 4) if metrics.get("period_s") is not None else None,
+                    "delay": round(metrics["delay_ps"], 4) if metrics.get("delay_ps") is not None else None,
+                    "PDP": round(metrics["pdp_j"] * 1e15, 6) if metrics.get("pdp_j") is not None else None,
+                    "objective": round(score, 6),
+                    "simulation_status": status,
+                    "oscillation_status": "VALID" if is_oscillating else "NO_OSCILLATION",
+                    "runtime": round(eval_result.get("sim_time_sec", 0.0), 3),
+                    # Canonical detailed fields
+                    "Wn_um": round(wn * 1e6, 4),
+                    "Wp_um": round(wp * 1e6, 4),
+                    "Wp_Wn_ratio": round(ratio, 4),
+                    "frequency_ghz": round(metrics["freq_ghz"], 6) if metrics.get("freq_ghz") is not None else None,
+                    "average_power_uw": round(metrics["power_mw"] * 1000, 3) if metrics.get("power_mw") is not None else None,
+                    "period_ps": round(metrics["period_s"] * 1e12, 4) if metrics.get("period_s") is not None else None,
+                    "delay_ps": round(metrics["delay_ps"], 4) if metrics.get("delay_ps") is not None else None,
+                    "pdp_fj": round(metrics["pdp_j"] * 1e15, 6) if metrics.get("pdp_j") is not None else None,
+                    "objective_score": round(score, 6),
+                    "runtime_sec": round(eval_result.get("sim_time_sec", 0.0), 3),
+                    "is_synthetic": self.dry_run
+                }
 
-            self.results_records.append(record)
+                self.results_records.append(record)
 
-            freq_str = f"{record['frequency_ghz']:.3f} GHz" if record['frequency_ghz'] is not None else "N/A"
-            pow_str = f"{record['average_power_uw']:.1f} µW" if record['average_power_uw'] is not None else "N/A"
+                # Update best feasible candidate
+                if is_feasible and (self.best_candidate is None or score > self.best_candidate["objective_score"]):
+                    self.best_candidate = record
 
-            print(
-                f"[{phase:11s}] Iter {iter_idx+1:02d}/50 | "
-                f"Wn={record['Wn_um']:.2f}µm, Wp={record['Wp_um']:.2f}µm (Ratio={record['Wp_Wn_ratio']:.2f}) | "
-                f"Status={record['oscillation_status']} | Freq={freq_str} | Power={pow_str} | "
-                f"F={record['objective_score']:.4f}"
-            )
+                # 6. Immediate per-iteration persistence (AUD-02)
+                self._append_record_to_csv(record, is_first=(not csv_initialized))
+                csv_initialized = True
+                self._write_checkpoint(iter_idx, candidate)
 
-        total_duration = time.time() - start_time_all
-        print(f"\nCampaign execution completed in {total_duration:.2f} seconds.")
+                freq_str = f"{record['frequency_ghz']:.3f} GHz" if record['frequency_ghz'] is not None else "N/A"
+                pow_str = f"{record['average_power_uw']:.1f} µW" if record['average_power_uw'] is not None else "N/A"
 
-        # 6. Save artifacts
-        self._save_artifacts(total_duration)
+                print(
+                    f"[{phase:11s}] Iter {iter_idx+1:02d}/50 | "
+                    f"Wn={record['Wn_um']:.2f}µm, Wp={record['Wp_um']:.2f}µm (Ratio={record['Wp_Wn_ratio']:.2f}) | "
+                    f"Status={record['oscillation_status']} | Freq={freq_str} | Power={pow_str} | "
+                    f"F={record['objective_score']:.4f}"
+                )
+
+        finally:
+            total_duration = time.time() - start_time_all
+            print(f"\nCampaign execution phase ended in {total_duration:.2f} seconds.")
+            # Ensure final summary and config are saved even on premature loop exit (AUD-02)
+            self._save_final_artifacts(total_duration)
 
         valid_records = [r for r in self.results_records if r["oscillation_status"] == "VALID"]
         best_cand = max(valid_records, key=lambda x: x["objective_score"]) if valid_records else None
 
         return {
+            "campaign_id": self.campaign_id,
             "total_evaluations": len(self.results_records),
             "feasible_evaluations": len(valid_records),
             "best_candidate": best_cand,
@@ -545,13 +842,14 @@ class BayesianOptimizationCampaignRunner:
             "output_dir": str(self.output_dir)
         }
 
-    def _save_artifacts(self, total_duration: float) -> None:
-        """Write config.json, results.csv, and summary.md artifacts."""
+    def _save_final_artifacts(self, total_duration: float) -> None:
+        """Write config.json and summary.md artifacts atomically (AUD-02, AUD-03)."""
         valid_records = [r for r in self.results_records if r["oscillation_status"] == "VALID"]
         best_cand = max(valid_records, key=lambda x: x["objective_score"]) if valid_records else None
 
         # 1. config.json
         config_payload = {
+            "campaign_id": self.campaign_id,
             "campaign_name": "bayesian_optimization_scenario_a",
             "scenario": "scenario_a_balanced_05_05",
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -588,32 +886,21 @@ class BayesianOptimizationCampaignRunner:
                 "feasible_iterations": len(valid_records)
             }
         }
-        with open(self.output_dir / "config.json", "w", encoding="utf-8") as f:
-            json.dump(config_payload, f, indent=2)
+        cfg_final = self.output_dir / "config.json"
+        _safe_write_file(cfg_final, json.dumps(config_payload, indent=2))
 
-        # 2. results.csv
-        csv_fields = [
-            "iteration", "phase", "seed", "Wn", "Wp", "ratio", "frequency", "average_power",
-            "period", "delay", "PDP", "objective", "simulation_status", "oscillation_status",
-            "runtime", "Wn_um", "Wp_um", "Wp_Wn_ratio", "frequency_ghz", "average_power_uw",
-            "period_ps", "delay_ps", "pdp_fj", "objective_score", "runtime_sec", "is_synthetic"
-        ]
-        with open(self.output_dir / "results.csv", "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=csv_fields)
-            writer.writeheader()
-            writer.writerows(self.results_records)
-
-        # 3. summary.md
+        # 2. summary.md
         dry_run_notice = "> [!NOTE]\n> **THIS IS A DRY-RUN VALIDATION DATASET GENERATED USING A DETERMINISTIC SYNTHETIC EVALUATOR.**\n> Zero LTspice simulations were executed. Physical simulation execution remains pending separate authorization.\n" if self.dry_run else ""
 
         summary_md = f"""# Bayesian Optimization Campaign A Summary (Scenario A: Balanced 0.5/0.5)
 
 {dry_run_notice}
+- **Campaign ID:** `{self.campaign_id}`
 - **Campaign Mode:** {"DRY-RUN (SYNTHETIC EVALUATOR)" if self.dry_run else "PHYSICAL LTSPICE EXECUTION"}
 - **Total Evaluations:** {len(self.results_records)} / {self.total_evaluations}
-- **Initial LHS Design:** {self.n_initial_samples} evaluations
-- **Adaptive BO Iterations:** {len(self.results_records) - self.n_initial_samples} evaluations
-- **Feasible / Valid Simulations:** {len(valid_records)} / {len(self.results_records)} ({len(valid_records)/max(len(self.results_records),1)*100:.1f}%)
+- **Initial LHS Design:** {min(len(self.results_records), self.n_initial_samples)} evaluations
+- **Adaptive BO Iterations:** {max(0, len(self.results_records) - self.n_initial_samples)} evaluations
+- **Feasible / Valid Simulations:** {len(valid_records)} / {max(len(self.results_records), 1)} ({len(valid_records)/max(len(self.results_records),1)*100:.1f}%)
 - **Deterministic Seed:** {self.seed}
 - **Total Duration:** {total_duration:.2f} s
 - **Acquisition Policy:** Expected Improvement (xi = 0.01 in standardized objective domain)
@@ -633,14 +920,14 @@ class BayesianOptimizationCampaignRunner:
         else:
             summary_md += "- No feasible candidates identified.\n"
 
-        with open(self.output_dir / "summary.md", "w", encoding="utf-8") as f:
-            f.write(summary_md)
+        sum_final = self.output_dir / "summary.md"
+        _safe_write_file(sum_final, summary_md)
 
         print(f"Artifacts successfully written to: {self.output_dir}")
 
 
 # ==============================================================================
-# CLI Entrypoint
+# CLI Entrypoint (AUD-04)
 # ==============================================================================
 
 def main():
@@ -666,27 +953,50 @@ def main():
         help="Optional custom output directory."
     )
     parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        default=False,
+        help="Explicitly permit overwriting an existing campaign directory (AUD-03)."
+    )
+    parser.add_argument(
         "--execute-physical-campaign",
         action="store_true",
         default=False,
-        help="EXPLICIT FLAG REQUIRED TO RUN PHYSICAL SIMULATIONS. In Step 6.2.1, this is FORBIDDEN."
+        help="Explicit physical execution pathway flag. Locked until authorized (AUD-04)."
     )
 
     args = parser.parse_args()
 
     if args.execute_physical_campaign:
-        print("ERROR: Physical simulation execution is FORBIDDEN in Step 6.2.1.")
-        print("Step 6.2.1 requires dry-run validation only. Separate user approval is required to launch LTspice.")
-        sys.exit(1)
+        # Safety gate: Physical campaign execution requires explicit approval environment variable (AUD-04)
+        if os.environ.get("AUTHORIZE_PHYSICAL_CAMPAIGN_A") != "1":
+            print("=" * 80)
+            print("SAFETY INTERLOCK: PHYSICAL CAMPAIGN EXECUTION IS CURRENTLY LOCKED.")
+            print("The physical execution pathway has been validated, but Step 6.2.1 approval")
+            print("is restricted to software tests and dry-run validation.")
+            print("To unlock physical execution once approved by the user, set AUTHORIZE_PHYSICAL_CAMPAIGN_A=1.")
+            print("=" * 80)
+            sys.exit(1)
 
-    runner = BayesianOptimizationCampaignRunner(
-        config_path=args.config,
-        scenario_key="scenario_a",
-        dry_run=True,
-        output_dir=args.output_dir
-    )
+        runner = BayesianOptimizationCampaignRunner(
+            config_path=args.config,
+            scenario_key="scenario_a",
+            dry_run=False,
+            output_dir=args.output_dir,
+            overwrite=args.overwrite
+        )
+    else:
+        runner = BayesianOptimizationCampaignRunner(
+            config_path=args.config,
+            scenario_key="scenario_a",
+            dry_run=True,
+            output_dir=args.output_dir,
+            overwrite=args.overwrite
+        )
+
     summary = runner.run()
-    print("\nDRY-RUN VALIDATION COMPLETE.")
+    print("\nCAMPAIGN RUN COMPLETE.")
+    print(f"Campaign ID: {summary['campaign_id']}")
     print(f"Evaluations: {summary['total_evaluations']} | Feasible: {summary['feasible_evaluations']}")
 
 
