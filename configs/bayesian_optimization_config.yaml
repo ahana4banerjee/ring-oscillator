@@ -1,0 +1,60 @@
+# Bayesian Optimization Pipeline Configuration
+# Formal Phase 6 Frozen Configuration (Scenario A & Scenario B)
+
+circuit:
+  baseline_netlist: "circuits/baseline/ring_oscillator.asc"
+  template_netlist: "circuits/templates/ring_oscillator.net"
+  models_path: "circuits/models/"
+  stages: 5
+  vdd: 1.1                     # Supply Voltage (V)
+  nominal_wn: 0.5e-6           # Baseline NMOS width (m)
+  nominal_wp: 1.0e-6           # Baseline PMOS width (m)
+  length: 0.04e-6              # Channel length (m)
+
+simulation:
+  ltspice_executable: "C:\\Users\\Ahana Banerjee\\AppData\\Local\\Programs\\ADI\\LTspice\\LTspice.exe"
+  transient_stop: "1n"
+  transient_start_save: "0.2n"
+  max_step: "0.01p"
+  timeout_seconds: 30
+
+# Formal Frozen Search Space (DRC 10 nm grid, 28,013 valid points)
+search_space:
+  wn_min: 0.12e-6              # 0.12 um (frozen lower bound)
+  wn_max: 1.20e-6              # 1.20 um (frozen upper bound)
+  wp_min: 0.24e-6              # 0.24 um (frozen lower bound)
+  wp_max: 2.80e-6              # 2.80 um (frozen upper bound)
+  step_size: 10e-9             # 10 nm grid resolution
+
+normalization:
+  baseline_frequency_hz: 41069756649.1  # 41.0697566491 GHz from 40nm baseline (0.5u/1.0u @ 1.1V)
+  baseline_power_w: 0.000140169553568    # 140.169553568 uW from 40nm baseline (0.5u/1.0u @ 1.1V)
+
+optimization:
+  method: "bayesian"
+  surrogate: "gp_matern52"
+  kernel: "matern52_ard"
+  nugget: 1.0e-6
+  acquisition: "expected_improvement"
+  xi: 0.01                     # Evaluated in standardized objective domain
+  total_evaluations: 50        # Per-campaign budget
+  n_initial_samples: 10        # Phase 1 space-filling LHS
+  n_adaptive_iterations: 40    # Phase 2 adaptive BO
+  seeds:
+    scenario_a: 2026           # Scenario A deterministic seed
+    scenario_b: 3031           # Scenario B deterministic seed
+  scenarios:
+    scenario_a:
+      name: "balanced"
+      w_f: 0.5
+      w_p: 0.5
+    scenario_b:
+      name: "frequency_priority"
+      w_f: 0.7
+      w_p: 0.3
+  penalty_value: -1.0e9        # Penalty score for failed/non-oscillating circuits
+
+logging:
+  base_dir: "experiments/bayesian_optimization"
+  scenario_a_dir: "experiments/bayesian_optimization/scenario_05_05"
+  scenario_b_dir: "experiments/bayesian_optimization/scenario_07_03"

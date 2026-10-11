@@ -5,10 +5,14 @@ Implements sample-efficient surrogate-model-guided optimization for CMOS Ring Os
 transistor sizing (Wn, Wp), adhering strictly to the SRS.md and README.md specifications:
 - Space-filling Latin Hypercube Sampling (LHS) for the initial N_init = 10 evaluations (Phase 1).
 - Gaussian Process Regression with Matérn 5/2 covariance kernel and ARD lengthscales (Phase 2).
-- Expected Improvement (EI) acquisition function with exploration parameter xi = 0.01.
-- Discrete 10 nm DRC grid snapping across frozen bounds [0.12, 1.20] µm x [0.24, 2.80] µm.
+- Expected Improvement (EI) acquisition function with exploration parameter xi = 0.01 evaluated
+  in the standardized objective domain for strict scale invariance.
+- Non-positive EI fallback mechanism selecting the maximum posterior mean unvisited candidate.
+- Robust conditioning for failed/infeasible simulation candidates (preserving raw penalty in history
+  while preventing numerical destabilization of the GP surrogate).
+- Discrete 10 nm DRC grid snapping across frozen bounds [0.12, 1.20] µm x [0.24, 2.80] µm (28,013 points).
 - Strict duplicate mitigation rejecting previously evaluated coordinates.
-- Isolation from Random Search benchmark dataset (no prior data leakage).
+- Complete isolation from Random Search benchmark dataset (no prior data leakage).
 """
 
 from typing import Dict, List, Tuple, Any, Optional, Set, Union
@@ -20,6 +24,34 @@ from scipy.stats import norm
 from scipy.stats.qmc import LatinHypercube
 
 from src.optimization.base import BaseOptimizer
+
+
+# Authoritative Formal Frozen Search Space Definition
+FROZEN_BO_BOUNDS: Dict[str, float] = {
+    "wn_min": 0.12e-6,
+    "wn_max": 1.20e-6,
+    "wp_min": 0.24e-6,
+    "wp_max": 2.80e-6,
+    "step_size": 10e-9
+}
+
+
+def validate_frozen_bounds(search_space: Dict[str, Any]) -> None:
+    """
+    Assert that the provided search space dictionary matches the frozen formal bounds.
+    
+    Raises:
+        ValueError: If any bound or step size deviates from the frozen specification.
+    """
+    for key, expected_val in FROZEN_BO_BOUNDS.items():
+        if key not in search_space:
+            raise ValueError(f"Missing required search space key '{key}'")
+        actual_val = float(search_space[key])
+        if abs(actual_val - expected_val) > 1e-12:
+            raise ValueError(
+                f"Bayesian Optimization must use frozen formal bounds. "
+                f"Mismatch on '{key}': got {actual_val}, expected {expected_val}."
+            )
 
 
 class GaussianProcessMatern52:
@@ -55,7 +87,6 @@ class GaussianProcessMatern52:
     @staticmethod
     def _matern52_kernel(X1: np.ndarray, X2: np.ndarray, lengthscales: np.ndarray, variance: float) -> np.ndarray:
         """Compute Matérn 5/2 kernel covariance matrix between X1 and X2 with ARD lengthscales."""
-        # Scale differences by lengthscales: shape (N1, N2, D)
         scaled_diff = (X1[:, None, :] - X2[None, :, :]) / lengthscales
         r = np.sqrt(np.sum(scaled_diff ** 2, axis=-1))
         sqrt5_r = np.sqrt(5.0) * r
@@ -150,15 +181,17 @@ class GaussianProcessMatern52:
 
         return self
 
-    def predict(self, X_new: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def predict(self, X_new: np.ndarray, return_standardized: bool = False) -> Tuple[np.ndarray, np.ndarray]:
         """
         Predict posterior mean and standard deviation at new candidate locations.
         
         Args:
             X_new: Array of shape (M, 2), normalized to [0, 1]^2.
+            return_standardized: If True, return predictions in standardized output space (mean ~ 0, var ~ 1).
+                                 If False, return predictions in original target units.
             
         Returns:
-            Tuple of (mean, std) in unstandardized (original) target units.
+            Tuple of (mean, std).
         """
         if self.X_train is None or self.L is None or self.alpha is None:
             raise RuntimeError("Gaussian Process must be fitted before calling predict.")
@@ -174,6 +207,9 @@ class GaussianProcessMatern52:
         var_std = self.signal_variance - np.sum(v ** 2, axis=0)
         var_std = np.maximum(var_std, 1e-12)
         sigma_std = np.sqrt(var_std)
+
+        if return_standardized:
+            return mu_std, sigma_std
 
         # Transform back to original target units
         mu = mu_std * self.y_std + self.y_mean
@@ -193,25 +229,29 @@ class BayesianOptimizer(BaseOptimizer):
 
     def __init__(
         self,
-        search_space: Dict[str, Any],
+        search_space: Optional[Dict[str, Any]] = None,
         seed: Optional[int] = None,
         n_initial_samples: int = 10,
         xi: float = 0.01,
-        nugget: float = 1e-6
+        nugget: float = 1e-6,
+        enforce_frozen_bounds: bool = False
     ):
         """
         Args:
-            search_space: Dictionary specifying parameter bounds and grid resolution:
-                - wn_min: float (minimum NMOS width in meters)
-                - wn_max: float (maximum NMOS width in meters)
-                - wp_min: float (minimum PMOS width in meters)
-                - wp_max: float (maximum PMOS width in meters)
-                - step_size: float (DRC grid step size in meters, e.g. 10e-9)
+            search_space: Dictionary specifying parameter bounds and grid resolution.
+                          Defaults to FROZEN_BO_BOUNDS if omitted.
             seed: Optional deterministic integer random seed for reproducibility.
             n_initial_samples: Number of initial space-filling LHS samples (default: 10).
-            xi: Exploration jitter parameter for Expected Improvement (default: 0.01).
+            xi: Exploration jitter parameter for Expected Improvement evaluated in
+                standardized objective domain (default: 0.01).
             nugget: Numerical nugget added to covariance diagonal (default: 1e-6).
+            enforce_frozen_bounds: If True, asserts search_space strictly matches FROZEN_BO_BOUNDS.
         """
+        if search_space is None:
+            search_space = FROZEN_BO_BOUNDS.copy()
+        elif enforce_frozen_bounds:
+            validate_frozen_bounds(search_space)
+
         super().__init__(search_space=search_space, seed=seed)
 
         self.wn_min = float(search_space["wn_min"])
@@ -296,15 +336,28 @@ class BayesianOptimizer(BaseOptimizer):
 
         return candidates
 
-    def _compute_expected_improvement(self, mu: np.ndarray, sigma: np.ndarray, best_y: float) -> np.ndarray:
-        """Compute Expected Improvement vector across candidate predictions."""
-        improvement = mu - best_y - self.xi
-        ei = np.zeros_like(mu)
+    def _compute_expected_improvement(self, mu_std: np.ndarray, sigma_std: np.ndarray, best_y_std: float) -> np.ndarray:
+        """
+        Compute Expected Improvement vector in the standardized objective domain.
+        
+        Evaluated on standardized variables so that exploration parameter xi = 0.01
+        corresponds to 0.01 standard deviations of the objective function across all scenarios.
+        
+        Args:
+            mu_std: Posterior predictive mean in standardized domain.
+            sigma_std: Posterior predictive standard deviation in standardized domain.
+            best_y_std: Best observed feasible score in standardized domain.
+            
+        Returns:
+            Vector of Expected Improvement values (standardized scale).
+        """
+        improvement = mu_std - best_y_std - self.xi
+        ei = np.zeros_like(mu_std)
 
-        mask_positive = sigma > 1e-9
+        mask_positive = sigma_std > 1e-9
         if np.any(mask_positive):
-            z = improvement[mask_positive] / sigma[mask_positive]
-            ei[mask_positive] = improvement[mask_positive] * norm.cdf(z) + sigma[mask_positive] * norm.pdf(z)
+            z = improvement[mask_positive] / sigma_std[mask_positive]
+            ei[mask_positive] = improvement[mask_positive] * norm.cdf(z) + sigma_std[mask_positive] * norm.pdf(z)
 
         # For zero-variance points, improvement is deterministic
         mask_zero = ~mask_positive
@@ -327,19 +380,33 @@ class BayesianOptimizer(BaseOptimizer):
             return candidate
 
         # Phase 2: Adaptive Bayesian Optimization
-        # Extract evaluated feasible coordinates and target objective values
+        # Extract evaluated coordinates and assemble surrogate-conditioned targets
+        feasible_records = [r for r in self.history if r.get("is_feasible", False)]
+        feasible_scores = [r["objective_score"] for r in feasible_records]
+
+        # Conditioned penalty floor to protect GP target standardization from extreme outliers (-1e9)
+        if len(feasible_scores) > 0:
+            min_feasible = min(feasible_scores)
+            std_feasible = np.std(feasible_scores) if len(feasible_scores) > 1 else 0.5
+            penalty_floor = min_feasible - max(2.0 * std_feasible, 0.2)
+        else:
+            penalty_floor = -1.0
+
         X_obs_list = []
         y_obs_list = []
         for record in self.history:
             cand = record["candidate"]
             coord = (round(cand["wn"], 12), round(cand["wp"], 12))
-            # Normalize to [0, 1]^2
             norm_x = [
                 (coord[0] - self.wn_min) / (self.wn_max - self.wn_min),
                 (coord[1] - self.wp_min) / (self.wp_max - self.wp_min)
             ]
             X_obs_list.append(norm_x)
-            y_obs_list.append(record["objective_score"])
+            if record.get("is_feasible", False):
+                y_obs_list.append(float(record["objective_score"]))
+            else:
+                # Use conditioned penalty floor for surrogate fitting (history retains raw penalty)
+                y_obs_list.append(penalty_floor)
 
         X_obs = np.array(X_obs_list)
         y_obs = np.array(y_obs_list)
@@ -348,35 +415,40 @@ class BayesianOptimizer(BaseOptimizer):
         self.gp = GaussianProcessMatern52(nugget=self.nugget, random_state=self.rng)
         self.gp.fit(X_obs, y_obs)
 
-        # Compute posterior predictive mean and std across all 28,013 grid points
-        mu_grid, sigma_grid = self.gp.predict(self.grid_norm)
+        # Compute standardized predictions for scale-invariant Expected Improvement
+        mu_grid_std, sigma_grid_std = self.gp.predict(self.grid_norm, return_standardized=True)
+        # Compute unstandardized posterior mean for fallback candidate ranking
+        mu_grid_raw, _ = self.gp.predict(self.grid_norm, return_standardized=False)
 
-        # Determine current best feasible objective score (or mean if none feasible)
-        feasible_scores = [r["objective_score"] for r in self.history if r.get("is_feasible", False)]
-        current_best = max(feasible_scores) if len(feasible_scores) > 0 else np.max(y_obs)
+        # Determine current best feasible target in standardized domain
+        best_feasible_raw = max(feasible_scores) if len(feasible_scores) > 0 else np.max(y_obs)
+        best_y_std = (best_feasible_raw - self.gp.y_mean) / self.gp.y_std
 
-        # Calculate Expected Improvement
-        ei_values = self._compute_expected_improvement(mu_grid, sigma_grid, current_best)
+        # Calculate Expected Improvement in standardized domain
+        ei_values = self._compute_expected_improvement(mu_grid_std, sigma_grid_std, best_y_std)
 
-        # Duplicate Mitigation: Strictly mask already evaluated coordinates
-        for idx, coord in enumerate(self.grid_coords):
-            coord_tuple = (round(coord[0], 12), round(coord[1], 12))
-            if coord_tuple in self.evaluated_coords:
-                ei_values[idx] = -1.0
+        # Identify all unvisited candidate indices (Duplicate Mitigation)
+        unvisited_indices = [
+            i for i, c in enumerate(self.grid_coords)
+            if (round(c[0], 12), round(c[1], 12)) not in self.evaluated_coords
+        ]
+        if len(unvisited_indices) == 0:
+            raise RuntimeError("All candidate points in the search space have already been evaluated.")
 
-        best_idx = int(np.argmax(ei_values))
+        # Candidate selection with non-positive EI fallback
+        unvisited_ei = ei_values[unvisited_indices]
+        max_unvisited_ei = float(np.max(unvisited_ei))
 
-        # Fallback if all valid points have non-positive EI
-        if ei_values[best_idx] < 0:
-            unvisited_indices = [
-                i for i, c in enumerate(self.grid_coords)
-                if (round(c[0], 12), round(c[1], 12)) not in self.evaluated_coords
-            ]
-            if len(unvisited_indices) > 0:
-                # Pick unvisited point with highest posterior predictive mean
-                best_idx = unvisited_indices[int(np.argmax(mu_grid[unvisited_indices]))]
-            else:
-                raise RuntimeError("All candidate points in the search space have already been evaluated.")
+        if max_unvisited_ei > 0.0:
+            # Positive EI exists among unvisited candidates -> select maximum EI
+            best_local_idx = int(np.argmax(unvisited_ei))
+            best_idx = unvisited_indices[best_local_idx]
+        else:
+            # Non-positive EI across all unvisited candidates (EI <= 0)
+            # Activate fallback: select unvisited candidate with maximum posterior predictive mean
+            unvisited_mu = mu_grid_raw[unvisited_indices]
+            best_local_idx = int(np.argmax(unvisited_mu))
+            best_idx = unvisited_indices[best_local_idx]
 
         selected_wn = float(self.grid_coords[best_idx, 0])
         selected_wp = float(self.grid_coords[best_idx, 1])
@@ -409,6 +481,7 @@ class BayesianOptimizer(BaseOptimizer):
 
         self.history.append(record)
 
+        # Only feasible candidates can become the best candidate
         if is_feasible and score > self.best_score:
             self.best_score = score
             self.best_candidate_record = record

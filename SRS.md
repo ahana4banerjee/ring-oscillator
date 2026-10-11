@@ -422,17 +422,20 @@ The budget is partitioned into two distinct methodological phases:
 ---
 
 #### 12.1.8 Acquisition Function: Expected Improvement (EI)
-- **Acquisition Strategy:** Expected Improvement (EI) over the current best observed feasible score $\mathcal{F}^+$:
-  $$\alpha_{EI}(\mathbf{x}) = \mathbb{E}\left[\max(0, \mathcal{F}(\mathbf{x}) - \mathcal{F}^+ - \xi)\right]$$
-- **Analytical Closed Form:**
-  $$\alpha_{EI}(\mathbf{x}) = (\mu(\mathbf{x}) - \mathcal{F}^+ - \xi) \Phi(Z) + \sigma(\mathbf{x}) \phi(Z)$$
+- **Acquisition Strategy:** Expected Improvement (EI) evaluated in the standardized objective domain over the current best observed feasible score $\tilde{\mathcal{F}}^+$:
+  $$\alpha_{EI}(\mathbf{x}) = \mathbb{E}\left[\max(0, \tilde{\mathcal{F}}(\mathbf{x}) - \tilde{\mathcal{F}}^+ - \xi)\right]$$
+- **Analytical Closed Form (Standardized Domain):**
+  $$\alpha_{EI}(\mathbf{x}) = (\mu_{std}(\mathbf{x}) - \tilde{\mathcal{F}}^+ - \xi) \Phi(Z) + \sigma_{std}(\mathbf{x}) \phi(Z)$$
   where:
-  $$Z = \begin{cases} \frac{\mu(\mathbf{x}) - \mathcal{F}^+ - \xi}{\sigma(\mathbf{x})}, & \text{if } \sigma(\mathbf{x}) > 0 \\ 0, & \text{if } \sigma(\mathbf{x}) = 0 \end{cases}$$
-  - $\mu(\mathbf{x})$: Posterior mean prediction of the GP.
-  - $\sigma(\mathbf{x})$: Posterior standard deviation (predictive uncertainty).
-  - $\Phi(\cdot), \phi(\cdot)$: Cumulative distribution and probability density functions of the standard normal distribution $\mathcal{N}(0, 1)$.
-  - $\mathcal{F}^+$: Best observed feasible objective score achieved across all completed evaluations.
-  - $\xi = 0.01$: Exploration jitter parameter controlling the trade-off between global exploration ($\sigma(\mathbf{x})$) and local exploitation ($\mu(\mathbf{x})$).
+  $$Z = \begin{cases} \frac{\mu_{std}(\mathbf{x}) - \tilde{\mathcal{F}}^+ - \xi}{\sigma_{std}(\mathbf{x})}, & \text{if } \sigma_{std}(\mathbf{x}) > 0 \\ 0, & \text{if } \sigma_{std}(\mathbf{x}) = 0 \end{cases}$$
+  - $\mu_{std}(\mathbf{x})$: Posterior mean prediction in standardized output units.
+  - $\sigma_{std}(\mathbf{x})$: Posterior predictive standard deviation in standardized output units.
+  - $\tilde{\mathcal{F}}^+ = \frac{\mathcal{F}^+ - \mu_y}{\sigma_y}$: Best observed feasible score mapped to standardized output units.
+  - $\xi = 0.01$: Exploration jitter parameter applied in the standardized domain ($0.01\sigma_y$), ensuring scale-invariant trade-off balance across both Scenario A and Scenario B.
+- **Fallback Policy on Non-Positive EI ($\alpha_{EI} \le 0$):**
+  If all unvisited candidates on the discrete grid produce non-positive Expected Improvement ($\alpha_{EI} \le 0$), the optimizer activates the documented fallback: selecting the unvisited candidate with the maximum posterior predictive mean $\mu(\mathbf{x})$, guaranteeing that only non-evaluated points are proposed.
+- **Conditioned Penalty Handling for GP Surrogate:**
+  Infeasible/failed candidates ($\mathcal{F}_{penalty} = -1.0 \times 10^9$) are recorded verbatim in `self.history`, but for GP training target assembly, their target score is conditioned to a soft penalty floor ($\min(y_{feasible}) - \max(2\sigma_{feasible}, 0.2)$) to prevent numerical distortion of target standardization and hyperparameter fitting.
 
 ---
 

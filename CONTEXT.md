@@ -485,6 +485,46 @@ This document serves as the **chronological engineering journal, decision log, a
 
 ---
 
+### Phase 6 — Step 6.1.1: Bayesian Optimization Engine Refinements
+- **Date / Status:** Executed & Verified (Step 6.1.1 Complete; Campaign Execution Pending)
+- **Objective:** Address four issues identified during the Step 6.1 verification audit before commencing Campaign A.
+- **Key Actions Taken:**
+  1. **ISS-01 (Expected Improvement Scaling):**
+     - Updated `predict(return_standardized=True)` in `GaussianProcessMatern52`.
+     - Standardized the best observed feasible score $\tilde{y}^+ = (y^+ - \mu_y) / \sigma_y$.
+     - Evaluated analytical Expected Improvement entirely in the standardized target domain with $\xi = 0.01$.
+     - Preserves numerical stability when predictive standard deviation $\sigma_{std} \le 10^{-12}$ ($EI \to 0$).
+     - Guarantees scale invariance between Scenario A ($\Delta \mathcal{F} \approx 0.01$) and Scenario B ($\Delta \mathcal{F} \approx 0.90$).
+  2. **ISS-02 (Non-Positive EI Fallback Logic):**
+     - Corrected fallback condition to check whether the maximum unvisited EI exceeds zero: `max_unvisited_ei > 0.0`.
+     - When all unvisited points have non-positive EI, fallback selects the unvisited point with the highest GP posterior predictive mean $\mu(\mathbf{x})$.
+     - Strictly preserves exclusion of already-evaluated grid points. Raises `RuntimeError` if candidate space is completely exhausted.
+  3. **ISS-03 (Extreme Penalty Conditioning for GP Surrogate):**
+     - Retained uncorrupted observation scores ($\mathcal{F}_{penalty} = -1.0\times 10^9$) in recorded optimizer history (`self.history`).
+     - Conditioned GP training targets by applying a soft penalty floor: $y_{conditioned} = \min(y_{feas}) - \max(2\sigma_{feas}, 0.2)$ (or $-1.0$ if no feasible points exist).
+     - Prevents extreme penalties from dominating target variance $\sigma_y$ and corrupting kernel hyperparameter optimization.
+     - Preserved best-feasible-candidate tracking (`self.best_candidate_record`).
+  4. **ISS-04 (Configuration Decoupling):**
+     - Created `configs/bayesian_optimization_config.yaml` specifying formal frozen bounds ($W_n \in [0.12, 1.20]\mu\text{m}$, $W_p \in [0.24, 2.80]\mu\text{m}$, 28,013 valid points) and campaign budgets/seeds.
+     - Preserved legacy `configs/optimization_config.yaml` intact for Random Search regression compatibility.
+     - Implemented `FROZEN_BO_BOUNDS` and `validate_frozen_bounds()` in `src/optimization/bayesian.py`.
+- **Testing & Verification:**
+  - Expanded `tests/test_bayesian.py` from 10 to 17 tests:
+    * `test_expected_improvement_scale_invariance`
+    * `test_non_positive_ei_fallback_selection`
+    * `test_exhaustion_of_candidate_space`
+    * `test_extreme_penalty_handling_single_failure`
+    * `test_extreme_penalty_handling_all_failures`
+    * `test_extreme_penalty_handling_one_feasible_multiple_failures`
+    * `test_frozen_bounds_enforcement`
+    * `test_dedicated_bo_config_loading_and_isolation`
+  - Unit test outcome: **17/17 passed in 4.87s** (`pytest tests/test_bayesian.py`).
+  - Core suite outcome: **27/27 passed in 17.22s** (`test_bayesian.py`, `test_objective.py`, `test_random_search.py`, `test_random_search_integration.py`).
+  - Full suite outcome: **37/37 passed in 19.21s** across entire test directory.
+- **Physical Simulations Executed:** 0.
+
+---
+
 ## Architectural Principles & Decision Log
 
 1. **Separation of Concerns:**
@@ -499,15 +539,32 @@ This document serves as the **chronological engineering journal, decision log, a
    - **TBD-06 RESOLVED:** LTspice installation path configured in `configs/optimization_config.yaml`.
 3. **Decided vs. Unresolved Scope:**
    - All core architectural parameters (TBD-01, TBD-02, TBD-03, TBD-04, TBD-06) are now formally resolved and specified.
-   - Next execution phase: Implementation and execution of Phase 6 Bayesian Optimization.
+   - Next execution phase: Implementation and execution of Phase 6 Bayesian Optimization Campaign A upon user authorization.
 
 ---
 
 ## Verification & Test Suite Ledger
 
-All 20 automated unit and integration tests currently pass cleanly (`pytest tests/`):
+All 37 automated unit and integration tests currently pass cleanly (`pytest tests/`):
 
 ```text
+tests/test_bayesian.py::test_search_space_grid_dimensions PASSED
+tests/test_bayesian.py::test_invalid_bounds_rejection PASSED
+tests/test_bayesian.py::test_phase1_lhs_schedule_properties PASSED
+tests/test_bayesian.py::test_deterministic_seed_reproducibility PASSED
+tests/test_bayesian.py::test_distinct_seeds_produce_different_schedules PASSED
+tests/test_bayesian.py::test_gaussian_process_matern52_fit_and_predict PASSED
+tests/test_bayesian.py::test_expected_improvement_scale_invariance PASSED
+tests/test_bayesian.py::test_non_positive_ei_fallback_selection PASSED
+tests/test_bayesian.py::test_exhaustion_of_candidate_space PASSED
+tests/test_bayesian.py::test_extreme_penalty_handling_single_failure PASSED
+tests/test_bayesian.py::test_extreme_penalty_handling_all_failures PASSED
+tests/test_bayesian.py::test_extreme_penalty_handling_one_feasible_multiple_failures PASSED
+tests/test_bayesian.py::test_frozen_bounds_enforcement PASSED
+tests/test_bayesian.py::test_dedicated_bo_config_loading_and_isolation PASSED
+tests/test_bayesian.py::test_phase_transition_and_adaptive_optimization PASSED
+tests/test_bayesian.py::test_duplicate_mitigation_enforcement PASSED
+tests/test_bayesian.py::test_best_candidate_tracking PASSED
 tests/test_extractor.py::test_log_parser_success PASSED
 tests/test_extractor.py::test_log_parser_failed_measurement PASSED
 tests/test_extractor.py::test_metric_extractor_success PASSED

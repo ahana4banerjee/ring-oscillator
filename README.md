@@ -102,7 +102,7 @@ $$\mathcal{F}(W_n, W_p) = w_f \cdot \left(\frac{f_{osc}}{f_0}\right) - w_p \cdot
 | **Formal Search Space Decision** | **FROZEN** | N/A | N/A | $W_n \in [0.12, 1.20]\mu\text{m}, W_p \in [0.24, 2.80]\mu\text{m}$, 10 nm grid (**TBD-03**) |
 | **Formal RS Scenario A (0.5/0.5)** | **COMPLETE** | 100 | 100 | [RANDOM_SEARCH_FORMAL_100.md](RANDOM_SEARCH_FORMAL_100.md) (Seed 2026) |
 | **Formal RS Scenario B (0.7/0.3)** | **COMPLETE** | **0** (Offline re-scored) | 100 | [RANDOM_SEARCH_RESCORING_07_03.md](RANDOM_SEARCH_RESCORING_07_03.md) |
-| **BO Engine (`src/optimization/bayesian.py`)** | **COMPLETE & VERIFIED** | N/A | N/A | 10/10 unit tests pass (`tests/test_bayesian.py`) |
+| **BO Engine (`src/optimization/bayesian.py`)** | **REFINED & VERIFIED (Step 6.1.1)** | N/A | N/A | 17/17 unit tests pass (`tests/test_bayesian.py`) |
 | **BO Campaign A (0.5/0.5)** | **PENDING APPROVAL** | 50 (Planned) | 50 (Planned) | 10 LHS + 40 adaptive GP/EI |
 | **BO Campaign B (0.7/0.3)** | **PENDING APPROVAL** | 50 (Planned) | 50 (Planned) | 10 LHS + 40 adaptive GP/EI |
 | **Current Completed Total** | — | **190** (90 exploratory + 100 formal) | **290** | Complete and verified |
@@ -112,18 +112,20 @@ $$\mathcal{F}(W_n, W_p) = w_f \cdot \left(\frac{f_{osc}}{f_0}\right) - w_p \cdot
 
 ## 7. Bayesian Optimization: Status & Next Step
 
-### 7.1 Current Status: Engine Implemented & Verified
-The Bayesian Optimization Engine (`BayesianOptimizer` in `src/optimization/bayesian.py`) has been implemented and unit verified across 10 test cases (`tests/test_bayesian.py`):
-- Gaussian Process Regression with Matérn 5/2 kernel and ARD lengthscales (`GaussianProcessMatern52`).
-- Space-filling Latin Hypercube Sampling (LHS) for the initial $N_{init} = 10$ candidates.
-- Expected Improvement ($\alpha_{EI}$) acquisition function with exploration parameter $\xi = 0.01$.
-- Discrete $10\text{ nm}$ DRC grid snapping over all 28,013 valid points.
-- Strict duplicate mitigation rejecting previously evaluated coordinates.
+### 7.1 Current Status: Engine Refined & Verified (Step 6.1.1)
+The Bayesian Optimization Engine (`BayesianOptimizer` in `src/optimization/bayesian.py`) has been fully refined and unit-verified across 17 test cases (`tests/test_bayesian.py`):
+- **ISS-01 (Standardized Domain EI):** Expected Improvement evaluated in the standardized target domain with $\xi = 0.01\sigma_y$, guaranteeing scale-invariant exploration across both Scenario A and Scenario B.
+- **ISS-02 (Fallback Selection):** Fallback condition corrected to `max_unvisited_ei > 0.0`; when non-positive, selects unvisited candidate with maximum posterior predictive mean $\mu(\mathbf{x})$, strictly excluding previously evaluated points.
+- **ISS-03 (Conditioned Penalties):** Failed observations ($\mathcal{F}_{penalty} = -1.0\times 10^9$) are recorded verbatim in `self.history`, while GP training target scores are conditioned to a soft penalty floor ($\min(y_{feas}) - \max(2\sigma_{feas}, 0.2)$) to prevent numerical distortion of covariance fitting.
+- **ISS-04 (Configuration Decoupling):** Dedicated `configs/bayesian_optimization_config.yaml` created with frozen bounds ($[0.12, 1.20]\mu\text{m} \times [0.24, 2.80]\mu\text{m}$, 28,013 valid points) and strict bounds validator `validate_frozen_bounds()`, leaving legacy Random Search config intact.
+- **Surrogate:** Gaussian Process Regression with Matérn 5/2 kernel and ARD lengthscales (`GaussianProcessMatern52`).
+- **Initialization:** Space-filling Latin Hypercube Sampling (LHS) for the initial $N_{init} = 10$ candidates.
+- **Discrete Grid Snapping:** $10\text{ nm}$ DRC grid snapping over all 28,013 valid points with duplicate avoidance.
 
 ### 7.2 Next Pending Step: Campaign Execution (Awaiting Approval)
 - **Step 6.2:** Execute BO Campaign A (Scenario A: Balanced Objective $0.5/0.5$, budget 50 physical evaluations).
 
-### 7.1 Methodological Design Principles
+### 7.3 Methodological Design Principles
 1. **Two Independent Objective Campaigns:**
    - **Scenario A (Balanced: 0.5f / 0.5P):** $\mathcal{F}_A = 0.5(f/f_0) - 0.5(P/P_0)$
    - **Scenario B (Speed-Priority: 0.7f / 0.3P):** $\mathcal{F}_B = 0.7(f/f_0) - 0.3(P/P_0)$
@@ -156,8 +158,10 @@ The Bayesian Optimization Engine (`BayesianOptimizer` in `src/optimization/bayes
    - BO provides no mathematical proof of global optimality; all reporting uses "best observed candidate".
    - Success is defined by rigorous methodology and execution parity, not guaranteed outperformance over Random Search.
 
-### 7.2 Noted Configuration Inconsistency (Documentation Only)
-- In `configs/optimization_config.yaml` lines 21–24, `search_space` currently retains legacy exploratory bounds (`wn_min: 0.18e-6`, `wn_max: 0.80e-6`, `wp_min: 0.36e-6`, `wp_max: 1.60e-6`). When Phase 6 implementation begins, this configuration must be updated to match the frozen formal bounds (`0.12e-6` to `1.20e-6` and `0.24e-6` to `2.80e-6`). No code or configuration changes were executed in this phase.
+### 7.4 Resolved Configuration Decoupling (ISS-04 Resolved)
+- BO configuration has been decoupled from legacy Random Search configuration. A dedicated configuration file `configs/bayesian_optimization_config.yaml` contains the frozen bounds ($W_n \in [0.12, 1.20]\mu\text{m}$, $W_p \in [0.24, 2.80]\mu\text{m}$, 28,013 valid points) and campaign parameters.
+- Legacy `configs/optimization_config.yaml` is retained intact for Random Search regression testing.
+- `src/optimization/bayesian.py` enforces frozen bounds validation via `validate_frozen_bounds()`, preventing silent inheritance of legacy bounds.
 
 ---
 
@@ -168,13 +172,14 @@ ring-oscillator/
 ├── SRS.md                         # Single Source of Truth specification
 ├── README.md                      # Developer onboarding and project entry point
 ├── RANDOM_SEARCH_FORMAL_100.md    # Formal 100-evaluation Random Search report
-├── RE_AUDIT_PHASE_0_4.md          # Pipeline re-audit report (20/20 tests passing)
+├── RE_AUDIT_PHASE_0_4.md          # Pipeline re-audit report (20/20 tests pass)
 ├── CONTEXT.md                     # Engineering journal and decision log
 ├── requirements.txt               # Pinned Python package dependencies
 ├── .gitignore                     # Ignore SPICE binary outputs (*.raw, *.db)
 │
 ├── configs/                       # Configuration files
-│   └── optimization_config.yaml   # Primary simulation & optimizer configuration
+│   ├── optimization_config.yaml   # Primary simulation & legacy optimizer configuration
+│   └── bayesian_optimization_config.yaml # Dedicated frozen BO campaign configuration
 │
 ├── circuits/                      # SPICE circuit definitions
 │   ├── baseline/                  # Human-readable LTspice schematic reference
