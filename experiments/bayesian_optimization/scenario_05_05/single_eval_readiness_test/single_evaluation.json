@@ -1,0 +1,51 @@
+{
+  "candidate": {
+    "wn": 5e-07,
+    "wp": 1e-06
+  },
+  "evaluation_time_sec": 2.7698073387145996,
+  "is_physical": true,
+  "result": {
+    "status": "SUCCESS",
+    "is_feasible": true,
+    "objective_score": 0.0,
+    "metrics": {
+      "status": "SUCCESS",
+      "error_message": null,
+      "is_oscillating": true,
+      "raw_measurements": {
+        "tnom": 27.0,
+        "temp": 25.0,
+        "tperiod": 2.43488172707e-11,
+        "freq": 41069756649.1,
+        "avgpower": 0.000140169553568,
+        "tpd": 2.43488172707e-12
+      },
+      "period_s": 2.43488172707e-11,
+      "freq_hz": 41069756649.1,
+      "freq_ghz": 41.0697566491,
+      "power_w": 0.000140169553568,
+      "power_mw": 0.140169553568,
+      "delay_s": 2.43488172707e-12,
+      "delay_ps": 2.43488172707,
+      "pdp_j": 3.412962846742827e-16
+    },
+    "breakdown": {
+      "objective_mode": "weighted",
+      "is_feasible": true,
+      "status": "SUCCESS",
+      "penalty_applied": false,
+      "raw_freq_ghz": 41.0697566491,
+      "raw_power_mw": 0.140169553568,
+      "norm_freq": 1.0,
+      "norm_power": 1.0,
+      "freq_component": 0.5,
+      "power_component": -0.5,
+      "w_f": 0.5,
+      "w_p": 0.5,
+      "objective_score": 0.0
+    },
+    "sim_time_sec": 2.7660374641418457,
+    "is_synthetic": false
+  }
+}
