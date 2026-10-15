@@ -1,0 +1,15 @@
+Metric,Baseline Reference,Scenario A (Balanced 0.5/0.5),Scenario B (Frequency-Priority 0.7/0.3)
+Best Wn (um),0.50,0.12,1.20
+Best Wp (um),1.00,2.80,2.80
+Wp/Wn ratio,2.0000,23.3333,2.3333
+Oscillation frequency (GHz),41.0698,27.5709,105.6558
+Frequency change vs baseline,0.00%,-32.87%,+157.26%
+Average power (uW),140.1696,88.3190,360.8910
+Power change vs baseline,0.00%,-36.99%,+157.47%
+Propagation delay (ps),2.4349,3.6270,0.9465
+Power-delay product (fJ),0.3413,0.3203,0.3416
+Scenario objective score,F_A=0.000 / F_B=0.400,F_A = 0.020616,F_B = 1.028414
+Cross-scenario objective score,—,F_B = 0.280898,F_A = -0.001040
+Net objective gain (delta F),0.000000,+0.020616,+0.628414
+Best discovery evaluation,—,Eval 12,Eval 11
+Feasible candidates,1 / 1 (100%),49 / 50 (98.0%),49 / 50 (98.0%)
