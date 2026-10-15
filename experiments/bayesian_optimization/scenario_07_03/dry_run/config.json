@@ -1,0 +1,39 @@
+{
+  "campaign_id": "bo_scenario_b_3031_dry_run_20261015_080920",
+  "campaign_name": "bayesian_optimization_scenario_b",
+  "scenario": "scenario_b_frequency_priority_07_03",
+  "timestamp": "2026-10-15T08:09:48.039439+00:00",
+  "is_dry_run": true,
+  "is_synthetic_data": true,
+  "seed": 3031,
+  "total_evaluations": 50,
+  "n_initial_samples_lhs": 10,
+  "n_adaptive_iterations_bo": 40,
+  "search_space": {
+    "wn_min_um": 0.12,
+    "wn_max_um": 1.2,
+    "wp_min_um": 0.24,
+    "wp_max_um": 2.8,
+    "step_size_nm": 10.0,
+    "discrete_candidates_total": 28013
+  },
+  "objective": {
+    "mode": "weighted",
+    "w_f": 0.7,
+    "w_p": 0.3,
+    "penalty_value": -1000000000.0
+  },
+  "surrogate": {
+    "model": "GaussianProcessMatern52",
+    "kernel": "matern52_ard",
+    "nugget": 1e-06,
+    "acquisition": "expected_improvement",
+    "xi_standardized_domain": 0.01
+  },
+  "execution": {
+    "duration_sec": 27.209,
+    "completed_iterations": 50,
+    "feasible_iterations": 48,
+    "oscillating_iterations": 48
+  }
+}
