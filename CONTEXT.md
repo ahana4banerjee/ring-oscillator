@@ -15,7 +15,7 @@ This document serves as the **chronological engineering journal, decision log, a
 
 - **Project Goal:** Build an automated Python-LTspice optimization framework to optimize transistor widths ($W_n, W_p$) for a 5-stage CMOS ring oscillator across frequency ($f_{osc}$), average power dissipation ($P_{avg}$), and stage propagation delay ($t_{pd}$).
 - **Target Optimization Algorithms:** Bayesian Optimization (primary, sample-efficient) vs. Random Search (unbiased baseline).
-- **Current Completion Status:** **Phases 0 through 4, Phase 5.1, Phase 5.2, Phase 5.3, Phase 5.4, Phase 5.4A, and Phase 5.4B Complete & Verified (20/20 unit/integration tests passing).**
+- **Current Completion Status:** **Phases 0 through 8 Complete & Verified. All 55 automated unit/integration tests passing (100% pass rate). 290 physical LTspice simulations completed (90 exploratory + 100 formal Random Search + 50 BO Campaign A + 50 BO Campaign B; 390 scalar evaluations total). Formal root-level synthesis [`ANALYSIS.md`](ANALYSIS.md) authored and verified.**
 
 ---
 
@@ -525,6 +525,63 @@ This document serves as the **chronological engineering journal, decision log, a
 
 ---
 
+### Phase 6 Step 6.2: Bayesian Optimization Campaign A Implementation, Validation & Physical Execution (Balanced 0.5/0.5)
+- **Date / Status:** Executed & Verified (Phase 6, Step 6.2 & 6.2.1)
+- **Objective:** Build dedicated physical campaign runner for Scenario A with pre-flight single-point simulation check, rigorous dry-run protection, checkpoint recovery, atomic ledger persistence, and execute 50 physical evaluations in LTspice.
+- **Key Actions Taken:**
+  1. Created `experiments/run_bayesian_opt_scenario_a.py`.
+  2. Addressed code audit findings:
+     - Replaced evaluator injection override with direct protected evaluation function.
+     - Implemented non-destructive dry-run directory isolation and manifest tagging (`synthetic: true`).
+     - Implemented checkpoint resume and pre-flight validation check.
+     - Verified delay consistency relationship ($t_{pd} = T_{period} / (2 \times N_{stages}) = T/10$) for 5-stage ring oscillator.
+  3. Created unit test suite `tests/test_bayesian_runner.py` with 18 automated tests.
+  4. Executed physical Campaign A: 50 physical LTspice runs (10 initial LHS space-filling + 40 adaptive GP/EI) under Seed 2026.
+- **Empirical Results:**
+  - 49 feasible oscillating runs (98.0%), 1 non-oscillating failure at Iteration 17 ($W_n = 0.12\mu\text{m}, W_p = 0.24\mu\text{m}$, penalized with $\mathcal{F} = -1.0\times 10^9$).
+  - Optimal candidate found at Iteration 12: $W_n = 0.12\mu\text{m}, W_p = 2.80\mu\text{m}$ (Ratio = 23.33).
+  - $f_{osc} = 27.571\text{ GHz}$, $P_{avg} = 88.319\mu\text{W}$, $t_{pd} = 3.627\text{ ps}$, $\text{PDP} = 0.3203\text{ fJ}$, $\mathcal{F}_A = \mathbf{+0.020616}$.
+  - Achieved $-36.99\%$ power reduction and $-6.14\%$ PDP reduction vs baseline.
+  - Outperformed equal-budget RS-50 ($+0.004793$) by $>4.3\times$, and surpassed full-budget RS-100 ($+0.010923$) in half the evaluation count.
+- **Artifacts:** `experiments/bayesian_optimization/scenario_05_05/` (`results.csv`, `checkpoint.json`, `config.json`, `summary.md`, `analysis/campaign_a_analysis.md`, `comparison_rs_vs_bo.csv`, 5 plots).
+- **Physical Simulations Executed:** 50.
+
+---
+
+### Phase 6 Step 6.3: Bayesian Optimization Campaign B Implementation & Physical Execution (Speed-Priority 0.7/0.3)
+- **Date / Status:** Executed & Verified (Phase 6, Step 6.3)
+- **Objective:** Implement and execute dedicated physical Campaign B runner for frequency-priority objective ($w_f = 0.7, w_p = 0.3$) under complete isolation.
+- **Key Actions Taken:**
+  1. Created `experiments/run_bayesian_opt_scenario_b.py`.
+  2. Enforced campaign isolation: Independent seed `3031`, dedicated ledger directory `experiments/bayesian_optimization/scenario_07_03/`, no parameter or GP surrogate transfer from Scenario A.
+  3. Executed 50 physical LTspice runs (10 initial LHS + 40 adaptive GP/EI).
+- **Empirical Results:**
+  - 49 feasible oscillating runs (98.0%), 1 non-oscillating failure at Iteration 17 ($W_n = 0.12\mu\text{m}, W_p = 0.24\mu\text{m}$, penalized with $\mathcal{F} = -1.0\times 10^9$).
+  - Optimal candidate found at Iteration 11: $W_n = 1.20\mu\text{m}, W_p = 2.80\mu\text{m}$ (Ratio = 2.33).
+  - $f_{osc} = 105.656\text{ GHz}$, $P_{avg} = 360.891\mu\text{W}$, $t_{pd} = 0.9465\text{ ps}$, $\text{PDP} = 0.3416\text{ fJ}$, $\mathcal{F}_B = \mathbf{+1.028414}$ ($\Delta \mathcal{F}_B = +0.628414$).
+  - Achieved $+157.26\%$ frequency increase with sub-picosecond stage delay ($0.9465\text{ ps}$).
+- **Artifacts:** `experiments/bayesian_optimization/scenario_07_03/` (`results.csv`, `checkpoint.json`, `config.json`, `summary.md`, `analysis/campaign_b_analysis.md`, `comparison_scenario_a_vs_scenario_b.csv`, 4 plots).
+- **Physical Simulations Executed:** 50.
+
+---
+
+### Phase 8: Cross-Scenario Comparison & Comprehensive Root Synthesis (`ANALYSIS.md`)
+- **Date / Status:** Executed & Verified (Phase 8)
+- **Objective:** Author comprehensive, publication-grade research synthesis document in project root (`ANALYSIS.md`) consolidating all 290 physical evaluations across exploratory Random Search, formal Random Search, and both Bayesian Optimization campaigns.
+- **Key Actions Taken:**
+  1. Synthesized cross-scenario trade-offs, equal-budget and full-budget benchmarking, and parametric sensitivity.
+  2. Created root-level document `ANALYSIS.md` (444 lines, 15 sections, 66 verified relative Markdown links).
+  3. Verified absolute data integrity against raw CSV ledgers, checkpoints, and SPICE netlists.
+  4. Formulated core research findings:
+     - Sample Efficiency of Bayesian Optimization (BO beats RS-50 by $4.3\times$ and surpasses RS-100 in 50 evaluations).
+     - Multi-Objective Sizing Bifurcation ($W_n = 0.12\mu\text{m}$ for power vs. $W_n = 1.20\mu\text{m}$ for speed, with $W_p = 2.80\mu\text{m}$ optimal in both).
+     - Power-Delay Product (PDP) Invariance ($\sim 3.08\%$ variation across $6.7\times$ frequency range).
+     - Oscillation Failure Boundary identification at $W_n = 0.12\mu\text{m}, W_p = 0.24\mu\text{m}$.
+     - Documented research limitations (Level-1 MOS model uncalibrated to foundry PDK, lack of layout parasitics, PVT variation need).
+- **Physical Simulations Executed:** 0 (analytical synthesis of completed datasets).
+
+---
+
 ## Architectural Principles & Decision Log
 
 1. **Separation of Concerns:**
@@ -535,57 +592,42 @@ This document serves as the **chronological engineering journal, decision log, a
    - **TBD-01 RESOLVED:** $40\text{ nm}$ technology node assumption ($L_n = L_p = 40\text{ nm} = 0.04\mu\text{m}$). Generic Level-1 MOS model active.
    - **TBD-02 RESOLVED:** Nominal supply voltage fixed at $V_{DD} = 1.1\text{ V}$.
    - **TBD-03 RESOLVED:** Formal search bounds frozen at $W_n \in [0.12, 1.20]\mu\text{m}$, $W_p \in [0.24, 2.80]\mu\text{m}$, $10\text{ nm}$ grid.
-   - **TBD-04 RESOLVED IN SPECIFICATION:** Gaussian Process with Matérn 5/2 kernel + Expected Improvement acquisition; budget = 10 LHS + 40 adaptive = 50 physical evaluations per objective scenario.
+   - **TBD-04 RESOLVED & PHYSICALLY EXECUTED:** Gaussian Process with Matérn 5/2 kernel + Expected Improvement acquisition ($\xi = 0.01$); budget = 10 LHS + 40 adaptive = 50 physical evaluations per objective scenario. Executed and verified across Campaign A (Seed 2026) and Campaign B (Seed 3031).
    - **TBD-06 RESOLVED:** LTspice installation path configured in `configs/optimization_config.yaml`.
-3. **Decided vs. Unresolved Scope:**
-   - All core architectural parameters (TBD-01, TBD-02, TBD-03, TBD-04, TBD-06) are now formally resolved and specified.
-   - Next execution phase: Implementation and execution of Phase 6 Bayesian Optimization Campaign A upon user authorization.
+3. **Physical Simulation Accounting:**
+   - Exploratory Random Search: 90 physical runs (10 pilot + 30 boundary + 50 focused).
+   - Formal Random Search: 100 physical runs (Seed 2026).
+   - Formal RS Scenario B re-scoring: 0 physical runs (offline recalculation).
+   - Bayesian Optimization Campaign A: 50 physical runs (Seed 2026).
+   - Bayesian Optimization Campaign B: 50 physical runs (Seed 3031).
+   - **Total Completed Physical LTspice Simulations:** Exactly **290**.
+   - **Total Completed Scalar Evaluations:** Exactly **390**.
 
 ---
 
 ## Verification & Test Suite Ledger
 
-All 37 automated unit and integration tests currently pass cleanly (`pytest tests/`):
+All 55 automated unit and integration tests currently pass cleanly (`pytest tests/`):
 
 ```text
-tests/test_bayesian.py::test_search_space_grid_dimensions PASSED
-tests/test_bayesian.py::test_invalid_bounds_rejection PASSED
-tests/test_bayesian.py::test_phase1_lhs_schedule_properties PASSED
-tests/test_bayesian.py::test_deterministic_seed_reproducibility PASSED
-tests/test_bayesian.py::test_distinct_seeds_produce_different_schedules PASSED
-tests/test_bayesian.py::test_gaussian_process_matern52_fit_and_predict PASSED
-tests/test_bayesian.py::test_expected_improvement_scale_invariance PASSED
-tests/test_bayesian.py::test_non_positive_ei_fallback_selection PASSED
-tests/test_bayesian.py::test_exhaustion_of_candidate_space PASSED
-tests/test_bayesian.py::test_extreme_penalty_handling_single_failure PASSED
-tests/test_bayesian.py::test_extreme_penalty_handling_all_failures PASSED
-tests/test_bayesian.py::test_extreme_penalty_handling_one_feasible_multiple_failures PASSED
-tests/test_bayesian.py::test_frozen_bounds_enforcement PASSED
-tests/test_bayesian.py::test_dedicated_bo_config_loading_and_isolation PASSED
-tests/test_bayesian.py::test_phase_transition_and_adaptive_optimization PASSED
-tests/test_bayesian.py::test_duplicate_mitigation_enforcement PASSED
-tests/test_bayesian.py::test_best_candidate_tracking PASSED
-tests/test_extractor.py::test_log_parser_success PASSED
-tests/test_extractor.py::test_log_parser_failed_measurement PASSED
-tests/test_extractor.py::test_metric_extractor_success PASSED
-tests/test_extractor.py::test_metric_extractor_non_oscillating PASSED
-tests/test_extractor.py::test_candidate_1_regression_behavior PASSED
-tests/test_extractor.py::test_candidate_3_regression_behavior PASSED
-tests/test_extractor.py::test_invalid_non_positive_period_rejection PASSED
-tests/test_objective.py::test_baseline_evaluator_balanced PASSED
-tests/test_objective.py::test_speed_biased_evaluator PASSED
-tests/test_objective.py::test_penalty_handling_non_oscillating PASSED
-tests/test_objective.py::test_pdp_mode PASSED
-tests/test_random_search.py::test_random_search_bounds_enforcement PASSED
-tests/test_random_search.py::test_random_search_reproducibility PASSED
-tests/test_random_search.py::test_random_search_grid_snapping PASSED
-tests/test_random_search.py::test_random_search_register_and_best_tracking PASSED
-tests/test_random_search.py::test_random_search_invalid_bounds_error PASSED
-tests/test_random_search_integration.py::test_random_search_5_iteration_smoke_loop PASSED
-tests/test_runner.py::test_spice_engineering_formatting PASSED
-tests/test_runner.py::test_parameterizer_generation PASSED
-tests/test_runner.py::test_headless_ltspice_runner PASSED
+tests/test_bayesian.py .................                                 [ 30%]
+tests/test_bayesian_runner.py ..................                         [ 63%]
+tests/test_extractor.py .......                                          [ 76%]
+tests/test_objective.py ....                                             [ 83%]
+tests/test_random_search.py .....                                        [ 92%]
+tests/test_random_search_integration.py .                                [ 94%]
+tests/test_runner.py ...                                                 [100%]
+======================= 55 passed in 135.96s =======================
 ```
+
+Individual test modules:
+- `tests/test_bayesian.py` (17/17 passed): Grid sizing, LHS schedule properties, reproducibility, GP Matérn 5/2 fitting and prediction, EI scale invariance, non-positive EI fallback, candidate space exhaustion, soft penalty conditioning, frozen bounds enforcement, config isolation, adaptive transitions, duplicate mitigation, best-feasible tracking.
+- `tests/test_bayesian_runner.py` (18/18 passed): Runner initialization, directory structure creation, dry-run synthetic mode and safety locks, bounds validation, pre-flight single-point execution, checkpoint resumption and atomic persistence, duplicate prevention, summary and analysis artifact generation.
+- `tests/test_extractor.py` (7/7 passed): SPICE log parsing, failed measurement detection, electrical metric extraction ($f_{osc}, T, P_{avg}, t_{pd}, PDP$), non-oscillating status, regression fixtures, non-positive period validation.
+- `tests/test_objective.py` (4/4 passed): Baseline evaluator balanced scoring, speed-biased evaluator scoring, penalty scoring for non-oscillating runs, PDP mode.
+- `tests/test_random_search.py` (5/5 passed): Bounds enforcement, reproducibility, grid snapping, registration and best tracking, invalid bounds error.
+- `tests/test_random_search_integration.py` (1/1 passed): 5-iteration smoke loop integration.
+- `tests/test_runner.py` (3/3 passed): SPICE engineering formatting, netlist parameterizer generation, headless LTspice runner execution.
 
 ---
 

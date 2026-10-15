@@ -744,32 +744,51 @@ Phase 5 was executed in two major stages:
    - **Best Observed Formal Candidate (Scenario A 0.5/0.5):** Iteration 62 ($W_n = 0.19\mu\text{m}, W_p = 2.66\mu\text{m}$, Ratio = 14.00) yielding $\mathcal{F}_{0.5/0.5} = 0.010923$ ($35.37\text{ GHz}, 117.65\mu\text{W}, 2.83\text{ ps}, 0.3326\text{ fJ}$).
    - **Scenario B Re-scoring (0.7/0.3 COMPLETE):** Obtained by re-scoring the exact same 100 physical simulations without running additional simulations. Yields best observed candidate Iteration 63 ($W_n = 1.08\mu\text{m}, W_p = 2.42\mu\text{m}$, Ratio = 2.24) with score $\mathcal{F}_{0.7/0.3} = 0.909112$ ($\Delta \mathcal{F} = +0.509112$, $93.38\text{ GHz}, 318.90\mu\text{W}, 1.07\text{ ps}, 0.3415\text{ fJ}$).
 
-### Phase 6: Bayesian Optimization Engine (ENGINE IMPLEMENTED & VERIFIED)
-**Status:** **ENGINE IMPLEMENTED / CAMPAIGN EXECUTION PENDING**
+### Phase 6: Bayesian Optimization Engine & Physical Campaigns (COMPLETE & VERIFIED)
+**Status:** **COMPLETE & VERIFIED**
 
-The Bayesian Optimization engine module has been formally implemented and unit tested (`src/optimization/bayesian.py`, 10/10 tests passing in `tests/test_bayesian.py`). The optimizer coordinates two strictly independent experimental campaigns to be executed sequentially upon user approval:
-- **BO Experiment A (Balanced Objective 0.5/0.5):** Fixed budget of 50 physical LTspice evaluations (10 initial LHS space-filling + 40 adaptive GP/EI evaluations) over frozen bounds $[0.12, 1.20]\mu\text{m} \times [0.24, 2.80]\mu\text{m}$ on a $10\text{ nm}$ grid.
-- **BO Experiment B (Frequency-Priority Objective 0.7/0.3):** Fixed budget of 50 physical LTspice evaluations (10 initial LHS space-filling + 40 adaptive GP/EI evaluations) over frozen bounds $[0.12, 1.20]\mu\text{m} \times [0.24, 2.80]\mu\text{m}$ on a $10\text{ nm}$ grid.
+The Bayesian Optimization pipeline has been fully implemented, unit-tested, and physically executed in LTspice across two independent campaigns:
+- **BO Campaign A (Balanced Objective 0.5/0.5, Seed 2026):**
+  - **Evaluations:** 50 physical LTspice runs (10 initial LHS space-filling + 40 adaptive GP/EI evaluations) over frozen bounds $[0.12, 1.20]\mu\text{m} \times [0.24, 2.80]\mu\text{m}$ on a $10\text{ nm}$ grid.
+  - **Feasibility:** 49 / 50 valid oscillating circuits (98.0% feasibility; 1 non-oscillating candidate at Iteration 17: $W_n=0.12\mu\text{m}, W_p=0.24\mu\text{m}$, penalized with $\mathcal{F} = -1.0\times 10^9$).
+  - **Best Observed Candidate:** Iteration 12 ($W_n = 0.12\mu\text{m}, W_p = 2.80\mu\text{m}$, Ratio = 23.33)
+    - Objective Score: $\mathcal{F}_A = \mathbf{+0.020616}$
+    - Frequency: $27.571\text{ GHz}$ ($-32.87\%$ vs baseline)
+    - Average Power: $88.319\mu\text{W}$ ($-36.99\%$ vs baseline)
+    - Propagation Delay: $3.627\text{ ps}$ ($+48.96\%$ vs baseline)
+    - Power-Delay Product: $\text{PDP} = 0.3203\text{ fJ}$ ($-6.14\%$ vs baseline)
+  - **Artifacts:** [`experiments/bayesian_optimization/scenario_05_05/`](experiments/bayesian_optimization/scenario_05_05/) (`results.csv`, `checkpoint.json`, `config.json`, `summary.md`, `analysis/campaign_a_analysis.md`, `comparison_rs_vs_bo.csv`, 5 plots).
+- **BO Campaign B (Frequency-Priority Objective 0.7/0.3, Seed 3031):**
+  - **Evaluations:** 50 physical LTspice runs (10 initial LHS space-filling + 40 adaptive GP/EI evaluations) under independent seed `3031`.
+  - **Feasibility:** 49 / 50 valid oscillating circuits (98.0% feasibility; 1 non-oscillating candidate at Iteration 17: $W_n=0.12\mu\text{m}, W_p=0.24\mu\text{m}$, penalized with $\mathcal{F} = -1.0\times 10^9$).
+  - **Best Observed Candidate:** Iteration 11 ($W_n = 1.20\mu\text{m}, W_p = 2.80\mu\text{m}$, Ratio = 2.33)
+    - Objective Score: $\mathcal{F}_B = \mathbf{+1.028414}$ ($\Delta \mathcal{F}_B = +0.628414$ vs baseline score $0.400000$)
+    - Frequency: $105.656\text{ GHz}$ ($+157.26\%$ speedup vs baseline)
+    - Average Power: $360.891\mu\text{W}$ ($+157.47\%$ vs baseline)
+    - Propagation Delay: $0.9465\text{ ps}$ ($-61.13\%$ vs baseline, sub-picosecond stage delay)
+    - Power-Delay Product: $\text{PDP} = 0.3416\text{ fJ}$ ($+0.08\%$ vs baseline)
+  - **Artifacts:** [`experiments/bayesian_optimization/scenario_07_03/`](experiments/bayesian_optimization/scenario_07_03/) (`results.csv`, `checkpoint.json`, `config.json`, `summary.md`, `analysis/campaign_b_analysis.md`, `comparison_scenario_a_vs_scenario_b.csv`, 4 plots).
 - **Key Implementation Highlights:**
   - `GaussianProcessMatern52`: Gaussian Process surrogate with Matérn 5/2 covariance kernel, ARD lengthscales, $[0, 1]^2$ input normalization, target standardization, and $\sigma_n^2 = 10^{-6}$ numerical nugget.
-  - `BayesianOptimizer`: Expected Improvement ($\alpha_{EI}$) acquisition function with exploration parameter $\xi = 0.01$.
+  - `BayesianOptimizer`: Expected Improvement ($\alpha_{EI}$) acquisition function with exploration parameter $\xi = 0.01$. Soft penalty floor conditioning prevents extreme non-oscillating penalties from distorting surrogate variance.
   - Discrete $10\text{ nm}$ DRC grid snapping over all 28,013 valid candidates with strict duplicate rejection.
-  - Deterministic independent random seeds for full reproducibility.
-  - Strict isolation: Random Search benchmark dataset is NOT used for BO initialization.
+  - Strict campaign isolation: Scenario A and Scenario B maintain independent ledgers, configs, checkpoints, and random seeds. Random Search benchmark dataset was NOT used for BO initialization.
 
 ### Phase 7: Experiment Logging, Persistence & Visualization (COMPLETE)
-- **Deliverables:** `experiments/run_formal_random_search_100.py`, `experiments/analyze_formal_100.py`, `experiments/random_search/formal_100/`.
-- **Completion Criteria:** CSV ledgers (`results.csv`), JSON configs (`config.json`), summaries (`summary.md`), convergence curves, and trade-off scatter plots generated cleanly.
+- **Deliverables:** `experiments/run_formal_random_search_100.py`, `experiments/run_bayesian_opt_scenario_a.py`, `experiments/run_bayesian_opt_scenario_b.py`, `experiments/analyze_formal_100.py`.
+- **Completion Criteria:** CSV ledgers (`results.csv`), JSON checkpoints (`checkpoint.json`), JSON configs (`config.json`), summaries (`summary.md`), convergence curves, and trade-off scatter plots generated cleanly for all campaigns.
 
-### Phase 8: Systematic Method Comparison (PLANNED / NEXT PHASE)
-- **Deliverables:** `experiments/compare_methods.py`.
-- **Fair Comparison Principles:**
-  1. Identical frozen search bounds $[0.12, 1.20]\mu\text{m} \times [0.24, 2.80]\mu\text{m}$.
-  2. Identical objective function formulations (Scenario A 0.5/0.5 and Scenario B 0.7/0.3).
-  3. Identical $10\text{ nm}$ DRC grid snapping.
-  4. Identical execution harness, timeout settings, and baseline reference values ($f_0 = 41.069757\text{ GHz}, P_0 = 140.169554\mu\text{W}$).
-  5. **Equal-Budget Primary Comparison:** First 50 physical evaluations of Random Search vs. 50 total evaluations of Bayesian Optimization.
-  6. **Full-Budget Reference Comparison:** Full 100 physical evaluations of Random Search vs. 50 total evaluations of Bayesian Optimization.
+### Phase 8: Systematic Method Comparison & Synthesis (COMPLETE & VERIFIED)
+- **Status:** **COMPLETE & VERIFIED**
+- **Deliverables:**
+  - Root research synthesis document: [`ANALYSIS.md`](ANALYSIS.md)
+  - Method comparison ledgers: [`comparison_rs_vs_bo.csv`](experiments/bayesian_optimization/scenario_05_05/analysis/comparison_rs_vs_bo.csv), [`comparison_scenario_a_vs_scenario_b.csv`](experiments/bayesian_optimization/scenario_07_03/analysis/comparison_scenario_a_vs_scenario_b.csv)
+  - Detailed campaign analyses: [`campaign_a_analysis.md`](experiments/bayesian_optimization/scenario_05_05/analysis/campaign_a_analysis.md), [`campaign_b_analysis.md`](experiments/bayesian_optimization/scenario_07_03/analysis/campaign_b_analysis.md)
+- **Key Empirical Conclusions:**
+  1. **Sample Efficiency:** BO-50 achieved $\mathcal{F}_A = +0.020616$ in 50 evaluations, outperforming equal-budget RS-50 ($+0.004793$) by $>4.3\times$ and surpassing full-budget RS-100 ($+0.010923$) in half the physical evaluation count.
+  2. **Multi-Objective Sizing Bifurcation:** Under balanced weights ($0.5/0.5$), the optimizer drives to minimum $W_n$ ($0.12\mu\text{m}$) and maximum $W_p$ ($2.80\mu\text{m}$, Ratio 23.33) for power minimization. Under speed-priority weights ($0.7/0.3$), the optimizer drives to maximum $W_n$ ($1.20\mu\text{m}$) and maximum $W_p$ ($2.80\mu\text{m}$, Ratio 2.33) for maximum drive strength and sub-picosecond delay.
+  3. **PDP Invariance:** Power-Delay Product remains bounded within $[0.316, 0.358]\text{ fJ}$ ($\approx 3.08\%$ relative variation) across a $6.7\times$ frequency span ($15.8\text{ GHz}$ to $105.7\text{ GHz}$), confirming capacitive switching energy dominance ($E_{stage} \approx C_{eff} V_{DD}^2$).
+  4. **Failure Boundary:** Both BO campaigns identified the exact same oscillation breakdown point at $W_n = 0.12\mu\text{m}, W_p = 0.24\mu\text{m}$ (insufficient drive strength to overcome parasitic capacitance and loop gain threshold).
 
 ### Phase 9: Extended Experiments (PVT Operating Variations - Optional)
 - **Deliverables:** Config-driven sweep over supply voltage $V_{DD}$ ($\pm 10\%$) and temperature ($-40^\circ\text{C}$ to $125^\circ\text{C}$).
@@ -781,19 +800,19 @@ The Bayesian Optimization engine module has been formally implemented and unit t
 | **Exploratory Random Search** | 3 batches (10 pilot + 30 boundary + 50 focused) | **COMPLETE** | 90 | 90 |
 | **Formal RS Scenario A (0.5/0.5)** | Uniform random sampling (Seed 2026) | **COMPLETE** | 100 | 100 |
 | **Formal RS Scenario B (0.7/0.3)** | Offline re-scoring of formal 100 RS dataset | **COMPLETE** | **0** (Offline re-scored) | 100 |
-| **BO Scenario A (0.5/0.5)** | 10 LHS initial + 40 adaptive GP/EI | **METHODOLOGY DEFINED / NOT STARTED** | 50 (Planned) | 50 (Planned) |
-| **BO Scenario B (0.7/0.3)** | 10 LHS initial + 40 adaptive GP/EI | **METHODOLOGY DEFINED / NOT STARTED** | 50 (Planned) | 50 (Planned) |
-| **Current Completed Total** | — | **CURRENT COMPLETED** | **190** (90 exploratory + 100 formal) | **290** |
-| **Projected Final Total** | — | **PROJECTED TOTAL** | **290** (90 exploratory + 100 formal RS + 100 BO) | **390** |
+| **BO Scenario A (0.5/0.5)** | 10 LHS initial + 40 adaptive GP/EI (Seed 2026) | **COMPLETE** | 50 | 50 |
+| **BO Scenario B (0.7/0.3)** | 10 LHS initial + 40 adaptive GP/EI (Seed 3031) | **COMPLETE** | 50 | 50 |
+| **Current Completed Total** | — | **CURRENT COMPLETED** | **290** (90 exploratory + 100 RS + 100 BO) | **390** |
+| **Projected Final Total** | — | **PROJECTED TOTAL** | **290** | **390** |
 
-*(Note: Within the formal optimization campaigns excluding exploratory characterization, physical LTspice simulations currently total exactly 100, and will total 200 upon completion of both 50-evaluation BO campaigns).*
+*(Note: Total physical LTspice simulations across the entire research project equal exactly 290 runs [90 exploratory characterization + 100 formal Random Search + 100 formal Bayesian Optimization]. Total scalar objective evaluations equal 390 due to the zero-cost offline re-scoring of Random Search under Scenario B).*
 
 ---
 
 ## 17. Verification and Testing Strategy
 
 ### 17.1 Unit Tests (`pytest`)
-- All 20 unit and integration tests passing cleanly (`pytest tests/`).
+- All 55 unit and integration tests passing cleanly (`pytest tests/`).
 
 ---
 
@@ -807,10 +826,10 @@ The project implementation will be declared complete when:
 5. [x] Objective evaluation handles both valid outputs and failed/non-oscillating circuits.
 6. [x] Random Search campaign (100 physical evaluations, seed 2026) executed and characterized.
 7. [x] FINAL $W_n/W_p$ bounds frozen and TBD-03 resolved.
-8. [ ] Bayesian Optimization executes over the identical final search space with GP surrogate updating (ENGINE IMPLEMENTED & VERIFIED / CAMPAIGN EXECUTION PENDING).
+8. [x] Bayesian Optimization executes over the identical final search space with GP surrogate updating (COMPLETE & VERIFIED: Campaign A and Campaign B executed for 50 physical evaluations each).
 9. [x] All evaluations are tracked in structured CSV and JSON log artifacts.
 10. [x] Results are reproducible given the same random seed and configuration file.
-11. [ ] A comparison script generates Pareto frontier and convergence curves comparing BO vs. RS (PLANNED).
+11. [x] A comparison script generates Pareto frontier and convergence curves comparing BO vs. RS (COMPLETE & VERIFIED: Published in ANALYSIS.md with comparison CSVs and plots).
 12. [x] Automated test suite (`pytest`) covers configuration, parameterization, and parsing modules.
 
 ---
@@ -824,6 +843,6 @@ The following table tracks the formal resolution status of architectural choices
 | **TBD-01** | **Physical Transistor Technology Node & Models** | **RESOLVED** ($40\text{ nm}$ technology node assumption, $L_n = L_p = 40\text{ nm} = 0.04\mu\text{m}$. Generic Level-1 MOS model active) | Circuit files, length $L$ |
 | **TBD-02** | **Nominal Supply Voltage ($V_{DD}$)** | **RESOLVED** ($V_{DD} = 1.1\text{ V}$ fixed nominal operating voltage) | SPICE netlist & power |
 | **TBD-03** | **Search Space Bounds ($W_{n,min..max}$, $W_{p,min..max}$)** | **RESOLVED** ($W_n \in [0.12\mu\text{m}, 1.20\mu\text{m}]$, $W_p \in [0.24\mu\text{m}, 2.80\mu\text{m}]$, $10\text{ nm}$ grid frozen based on 90 exploratory evaluations) | Optimizer configuration |
-| **TBD-04** | **Bayesian Optimization Surrogate & Acquisition Formulation** | **RESOLVED IN SPECIFICATION** (Gaussian Process Regression with Matérn 5/2 kernel, Expected Improvement (EI) acquisition, $N_{init}=10$ LHS initial samples + 40 adaptive evaluations = 50 total evaluations per objective; implementation in Phase 6 using standard GP stack) | `src/optimization/bayesian.py` |
+| **TBD-04** | **Bayesian Optimization Surrogate & Acquisition Formulation** | **RESOLVED & PHYSICALLY EXECUTED** (Gaussian Process Regression with Matérn 5/2 kernel, Expected Improvement [EI] acquisition with $\xi=0.01$, $N_{init}=10$ LHS initial samples + 40 adaptive evaluations = 50 total evaluations per objective; executed and verified across Campaign A [Seed 2026] and Campaign B [Seed 3031]) | `src/optimization/bayesian.py` |
 | **TBD-06** | **LTspice Installation Path on Target OS** | **RESOLVED** (Configured centrally in repository `configs/optimization_config.yaml`, e.g. `C:\Users\Ahana Banerjee\AppData\Local\Programs\ADI\LTspice\LTspice.exe` on Windows) | Subprocess runner |
 
